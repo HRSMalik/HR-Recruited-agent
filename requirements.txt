@@ -8,4 +8,4 @@ openai==1.97.0
 pydantic
 python-dotenv==1.1.1
 uvicorn
-
+streamlit
