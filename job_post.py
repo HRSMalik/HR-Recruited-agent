@@ -2,37 +2,23 @@ from langchain.chat_models import init_chat_model
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langgraph.graph import StateGraph, END
 from langgraph.prebuilt import create_react_agent
-from langgraph.types import interrupt
+from langgraph.types import Command, interrupt
+from langgraph.errors import GraphInterrupt
 from langgraph.checkpoint.memory import InMemorySaver
-from typing import TypedDict, Optional, List
+from typing import TypedDict, Optional, List, Dict, Any
 import os
 from dotenv import load_dotenv
 load_dotenv()
-
 
 memory = InMemorySaver()
 
 class JobPostState(TypedDict):
     form_data: dict
     generated_post: Optional[str]
-    human_feedback: Optional[str]
+    human_feedback: Optional[Dict[str, Any]]
     approved: bool
 
 
-
-def review_router(state):
-
-    action = state["human_feedback"]["action"]
-
-    if action == "approve":
-        return "approved"
-
-    elif action == "edit":
-        return "format"
-
-    elif action == "regenerate":
-        return "regenerate"
-    
 
 def generate_post_node(state):
 
@@ -90,7 +76,7 @@ def regenerate_node(state):
     Feedback:
     {feedback}
     """
-    llm = init_chat_model("gpt-4o", temperature=3.0, max_tokens=300)
+    llm = init_chat_model("gpt-4o", temperature=0.3, max_tokens=300)
     response = llm.invoke(prompt)
 
     return {
@@ -128,6 +114,20 @@ def human_review(state):
     }
 
 
+def review_router(state):
+
+    action = state["human_feedback"]["action"]
+
+    if action == "approve":
+        return "approved"
+
+    elif action == "edit":
+        return "format"
+
+    elif action == "regenerate":
+        return "regenerate"
+    
+
 def create_workflow_agent():
     workflow = StateGraph(JobPostState)
 
@@ -158,23 +158,99 @@ def create_workflow_agent():
 
 if __name__ == "__main__":
     import uuid
+    import sys
+
+    def _read_multiline(prompt: str) -> str:
+        print(prompt)
+        print("(Finish by typing a single line with END)")
+        lines: List[str] = []
+        while True:
+            line = input()
+            if line.strip() == "END":
+                break
+            lines.append(line)
+        return "\n".join(lines).strip()
+
+    def _prompt_human_feedback(interrupt_value: Any) -> Dict[str, Any] | None:
+        if not isinstance(interrupt_value, dict):
+            interrupt_value = {}
+
+        message = interrupt_value.get("message")
+        generated_post = interrupt_value.get("generated_post")
+
+        if message:
+            print(f"\n{message}\n")
+        if generated_post:
+            print("--- Generated Job Post (Draft) ---")
+            print(generated_post)
+            print("--- End Draft ---\n")
+
+        while True:
+            action = input("Action? [a]pprove / [e]dit / [r]egenerate / [q]uit: ").strip().lower()
+            if action in {"a", "approve"}:
+                return {"action": "approve"}
+            if action in {"e", "edit"}:
+                edited = _read_multiline("Paste the fully edited job post:")
+                return {"action": "edit", "edited_post": edited}
+            if action in {"r", "regen", "regenerate"}:
+                feedback = input("What should be changed (short feedback)? ").strip()
+                return {"action": "regenerate", "feedback": feedback}
+            if action in {"q", "quit", "exit"}:
+                return None
+            print("Invalid choice. Please enter a/e/r/q.")
+
     thread_id = str(uuid.uuid4())
     config = {
             "configurable": {"thread_id": thread_id}
             }
     
     agent = create_workflow_agent()
-    response = agent.invoke({
-    "form_data": {
-        "title": "Software Engineer",
-        "experience_level": "Mid-level",
-        "description": "We are looking for a skilled software engineer MERN Stack to join our team.",
-        "requirements": "3+ years of experience in software development, proficiency in React, TypeScript and JavaScript."
-    }
-    }, config=config)
-   
 
-    
+    initial_input = {
+        "form_data": {
+            "title": "Software Engineer",
+            "experience_level": "Mid-level",
+            "description": "We are looking for a skilled software engineer MERN Stack to join our team.",
+            "requirements": "3+ years of experience in software development, proficiency in React, TypeScript and JavaScript.",
+        }
+    }
+
+    pending = initial_input
+
+    while True:
+
+        response = agent.invoke(
+            pending,
+            config=config
+        )
+
+        # INTERRUPT DETECTED
+        if "__interrupt__" in response:
+
+            interrupts = response["__interrupt__"]
+
+            interrupt_value = interrupts[0].value
+
+            human_feedback = _prompt_human_feedback(
+                interrupt_value
+            )
+
+            if human_feedback is None:
+                print("Aborted by user.")
+                sys.exit(1)
+
+            pending = Command(
+                resume=human_feedback
+            )
+
+            continue
+
+        # WORKFLOW FINISHED
+        break
+
+
+    print("\nFINAL JOB POST:\n")
+    print(response["generated_post"])
     # try:
     #     print(agent.get_graph().draw_mermaid())
     # except Exception as e:
