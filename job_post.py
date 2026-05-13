@@ -22,7 +22,9 @@ class JobPostState(TypedDict):
 
 def generate_post_node(state):
 
-    data = state["form_data"]
+    data = state.get("form_data") if isinstance(state, dict) else None
+    if not data:
+        raise ValueError("Missing 'form_data' in workflow state. Start a new thread via /job-posts before calling /job-posts/{thread_id}/review.")
 
     prompt = f"""
     Create a professional job post for TekHqs Company.
