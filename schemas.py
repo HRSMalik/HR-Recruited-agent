@@ -27,4 +27,5 @@ class JobPostAgentResult(BaseModel):
     status: Literal["needs_review", "approved"]
     thread_id: str
     generated_post: str
+    linkedin_posted: bool = False
     message: Optional[str] = None
