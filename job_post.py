@@ -6,9 +6,70 @@ from langgraph.types import Command, interrupt
 from langgraph.errors import GraphInterrupt
 from langgraph.checkpoint.memory import InMemorySaver
 from typing import TypedDict, Optional, List, Dict, Any
+from mcp.client.session import ClientSession
+from mcp.client.stdio import StdioServerParameters, stdio_client
+import asyncio
+import concurrent.futures
+import sys
 import os
 from dotenv import load_dotenv
 load_dotenv()
+
+
+
+def _run_coro_sync(coro):
+    """Run an async coroutine from sync code.
+
+    If we're already inside an event loop, run it in a fresh thread.
+    """
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        return executor.submit(lambda: asyncio.run(coro)).result()
+
+
+_MCP_TOOL_SPECS_CACHE: Optional[list[dict[str, Any]]] = None
+
+
+def _get_mcp_server_parameters() -> StdioServerParameters:
+    """Spawn the local MCP server over stdio (mcp_server.py)."""
+    server_script = os.path.join(os.path.dirname(__file__), "mcp_server.py")
+    return StdioServerParameters(
+        command=sys.executable,
+        args=[server_script],
+        cwd=os.path.dirname(server_script) or os.getcwd(),
+    )
+
+
+async def _mcp_list_tools_async() -> list[dict[str, Any]]:
+    params = _get_mcp_server_parameters()
+    async with stdio_client(params) as (read_stream, write_stream):
+        async with ClientSession(read_stream, write_stream) as session:
+            await session.initialize()
+            res = await session.list_tools()
+            specs: list[dict[str, Any]] = []
+            for t in res.tools:
+                specs.append(
+                    {
+                        "name": t.name,
+                        "description": t.description or "",
+                        "inputSchema": (t.inputSchema or {}),
+                    }
+                )
+            return specs
+
+
+async def _mcp_call_tool_async(tool_name: str, arguments: dict[str, Any]) -> Any:
+    params = _get_mcp_server_parameters()
+    async with stdio_client(params) as (read_stream, write_stream):
+        async with ClientSession(read_stream, write_stream) as session:
+            await session.initialize()
+            return await session.call_tool(tool_name, arguments=arguments)
+
+
 
 memory = InMemorySaver()
 
@@ -17,6 +78,7 @@ class JobPostState(TypedDict):
     generated_post: Optional[str]
     human_feedback: Optional[Dict[str, Any]]
     approved: bool
+    linkedin_posted: bool
 
 
 
@@ -130,6 +192,27 @@ def review_router(state):
         return "regenerate"
     
 
+def post_to_linkedin_node(state: dict) -> dict:
+    content = state.get("generated_post")
+    if not content or not str(content).strip():
+        raise ValueError("Missing 'generated_post' in workflow state; nothing to post.")
+
+    # Mark as approved when the human explicitly approved (approve path bypasses format_node).
+    approved = bool(state.get("approved"))
+    state = {**state, "approved": approved or True}
+
+    _run_coro_sync(
+        _mcp_call_tool_async(
+            "post_to_linkedin",
+            {
+                "content": str(content),
+                "headless": False,
+            },
+        )
+    )
+
+    return {**state, "linkedin_posted": True}
+
 def create_workflow_agent():
     workflow = StateGraph(JobPostState)
 
@@ -137,6 +220,7 @@ def create_workflow_agent():
     workflow.add_node("human_review", human_review)
     workflow.add_node("regenerate_post", regenerate_node)
     workflow.add_node("format_post", format_node)
+    workflow.add_node("post_to_linkedin", post_to_linkedin_node)
 
     workflow.set_entry_point("generate_job_post")
 
@@ -145,13 +229,14 @@ def create_workflow_agent():
         "human_review",
         review_router,
         {
-            "approved": "format_post",
+            "approved": "post_to_linkedin",
             "format": "format_post",
             "regenerate": "regenerate_post"
         }
     )
     workflow.add_edge("regenerate_post", "human_review")
-    workflow.add_edge("format_post", END)
+    workflow.add_edge("format_post", "post_to_linkedin")
+    workflow.add_edge("post_to_linkedin", END)
 
     graph = workflow.compile(checkpointer=memory)
     return graph
