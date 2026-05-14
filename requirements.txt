@@ -9,3 +9,5 @@ pydantic
 python-dotenv==1.1.1
 uvicorn
 streamlit
+playwright
+mcp[cli]==1.27.0
