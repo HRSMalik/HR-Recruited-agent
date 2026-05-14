@@ -1,5 +1,6 @@
 import streamlit as st
 import requests
+from requests import Response
 
 
 API_BASE = "http://localhost:8000"
@@ -13,6 +14,27 @@ st.set_page_config(
 st.title("HR Job Post Generator")
 
 
+def _parse_json_response(resp: Response) -> dict | None:
+    try:
+        data = resp.json()
+    except ValueError:
+        st.error(f"API returned non-JSON response (HTTP {resp.status_code}).")
+        st.code(resp.text)
+        return None
+
+    if not isinstance(data, dict):
+        st.error(f"API returned unexpected JSON type: {type(data).__name__} (HTTP {resp.status_code}).")
+        st.write(data)
+        return None
+
+    if resp.status_code >= 400:
+        st.error(f"API error (HTTP {resp.status_code}).")
+        st.write(data)
+        return None
+
+    return data
+
+
 # -----------------------------
 # SESSION STATE
 # -----------------------------
@@ -22,6 +44,12 @@ if "thread_id" not in st.session_state:
 
 if "generated_post" not in st.session_state:
     st.session_state.generated_post = None
+
+if "status" not in st.session_state:
+    st.session_state.status = None
+
+if "linkedin_posted" not in st.session_state:
+    st.session_state.linkedin_posted = False
 
 if "interrupt" not in st.session_state:
     st.session_state.interrupt = False
@@ -67,16 +95,30 @@ with st.form("job_form"):
             "requirements": requirements
         }
 
-        response = requests.post(
-            f"{API_BASE}/job-posts",
-            json=payload
-        )
+        try:
+            response = requests.post(
+                f"{API_BASE}/job-posts",
+                json=payload,
+                timeout=60,
+            )
+        except requests.RequestException as e:
+            st.error("Failed to call API.")
+            st.write(str(e))
+            st.stop()
 
-        data = response.json()
+        data = _parse_json_response(response)
+        if data is None:
+            st.stop()
 
-        st.session_state.thread_id = data["thread_id"]
-        st.session_state.generated_post = data["generated_post"]
-        st.session_state.status = data["status"]
+        st.session_state.thread_id = data.get("thread_id")
+        st.session_state.generated_post = data.get("generated_post")
+        st.session_state.status = data.get("status")
+        st.session_state.linkedin_posted = bool(data.get("linkedin_posted", False))
+
+        if not st.session_state.thread_id:
+            st.error("API response missing thread_id")
+            st.write(data)
+            st.stop()
 
 
 # -----------------------------
@@ -135,20 +177,29 @@ if st.session_state.generated_post:
             elif action == "regenerate":
                 payload["feedback"] = feedback
 
-            response = requests.post(
-                f"{API_BASE}/job-posts/{st.session_state.thread_id}/review",
-                json=payload
-            )
+            try:
+                response = requests.post(
+                    f"{API_BASE}/job-posts/{st.session_state.thread_id}/review",
+                    json=payload,
+                    timeout=120,
+                )
+            except requests.RequestException as e:
+                st.error("Failed to call API.")
+                st.write(str(e))
+                st.stop()
 
-            data = response.json()
+            data = _parse_json_response(response)
+            if data is None:
+                st.stop()
 
-            st.session_state.generated_post = (
-                data["generated_post"]
-            )
+            if "generated_post" not in data or "status" not in data:
+                st.error("API response missing required fields")
+                st.write(data)
+                st.stop()
 
-            st.session_state.status = (
-                data["status"]
-            )
+            st.session_state.generated_post = data.get("generated_post")
+            st.session_state.status = data.get("status")
+            st.session_state.linkedin_posted = bool(data.get("linkedin_posted", False))
 
             st.rerun()
 
@@ -161,8 +212,11 @@ if (
     st.session_state.generated_post
     and not st.session_state.interrupt
 ):
-
-    st.success("Job post approved successfully!")
+    if st.session_state.status == "approved":
+        if st.session_state.linkedin_posted:
+            st.success("Job post approved and posted to LinkedIn!")
+        else:
+            st.success("Job post approved successfully!")
 
     st.text_area(
         "Final Job Post",

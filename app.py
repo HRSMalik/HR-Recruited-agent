@@ -44,6 +44,7 @@ async def create_job_post(job_post: JobPostAgentRequest):
         "generated_post": None,
         "human_feedback": None,
         "approved": False,
+        "linkedin_posted": False,
     }
 
     try:
@@ -57,6 +58,7 @@ async def create_job_post(job_post: JobPostAgentRequest):
                 "status": "needs_review",
                 "thread_id": thread_id,
                 "generated_post": interrupt_value.get("generated_post", ""),
+                "linkedin_posted": False,
                 "message": interrupt_value.get("message"),
             },
         )
@@ -71,6 +73,7 @@ async def create_job_post(job_post: JobPostAgentRequest):
                 "status": "needs_review",
                 "thread_id": thread_id,
                 "generated_post": interrupt_value.get("generated_post", ""),
+                "linkedin_posted": False,
                 "message": interrupt_value.get("message"),
             },
         )
@@ -79,6 +82,7 @@ async def create_job_post(job_post: JobPostAgentRequest):
         "status": "approved",
         "thread_id": thread_id,
         "generated_post": response.get("generated_post", "") if isinstance(response, dict) else "",
+        "linkedin_posted": response.get("linkedin_posted", False) if isinstance(response, dict) else False,
         "message": None,
     }
 
@@ -108,6 +112,7 @@ async def review_job_post(thread_id: str, human_feedback: HumanFeedback):
                 "status": "needs_review",
                 "thread_id": thread_id,
                 "generated_post": interrupt_value.get("generated_post", ""),
+                "linkedin_posted": False,
                 "message": interrupt_value.get("message"),
             },
         )
@@ -132,6 +137,7 @@ async def review_job_post(thread_id: str, human_feedback: HumanFeedback):
                 "status": "needs_review",
                 "thread_id": thread_id,
                 "generated_post": interrupt_value.get("generated_post", ""),
+                "linkedin_posted": False,
                 "message": interrupt_value.get("message"),
             },
         )
@@ -140,6 +146,7 @@ async def review_job_post(thread_id: str, human_feedback: HumanFeedback):
         "status": "approved",
         "thread_id": thread_id,
         "generated_post": response.get("generated_post", "") if isinstance(response, dict) else "",
+        "linkedin_posted": response.get("linkedin_posted", False) if isinstance(response, dict) else False,
         "message": None,
     }
 
