@@ -2,12 +2,73 @@ from langchain.chat_models import init_chat_model
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langgraph.graph import StateGraph, END
 from langgraph.prebuilt import create_react_agent
-from langgraph.types import interrupt
+from langgraph.types import Command, interrupt
+from langgraph.errors import GraphInterrupt
 from langgraph.checkpoint.memory import InMemorySaver
-from typing import TypedDict, Optional, List
+from typing import TypedDict, Optional, List, Dict, Any
+from mcp.client.session import ClientSession
+from mcp.client.stdio import StdioServerParameters, stdio_client
+import asyncio
+import concurrent.futures
+import sys
 import os
 from dotenv import load_dotenv
 load_dotenv()
+
+
+
+def _run_coro_sync(coro):
+    """Run an async coroutine from sync code.
+
+    If we're already inside an event loop, run it in a fresh thread.
+    """
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        return executor.submit(lambda: asyncio.run(coro)).result()
+
+
+_MCP_TOOL_SPECS_CACHE: Optional[list[dict[str, Any]]] = None
+
+
+def _get_mcp_server_parameters() -> StdioServerParameters:
+    """Spawn the local MCP server over stdio (mcp_server.py)."""
+    server_script = os.path.join(os.path.dirname(__file__), "mcp_server.py")
+    return StdioServerParameters(
+        command=sys.executable,
+        args=[server_script],
+        cwd=os.path.dirname(server_script) or os.getcwd(),
+    )
+
+
+async def _mcp_list_tools_async() -> list[dict[str, Any]]:
+    params = _get_mcp_server_parameters()
+    async with stdio_client(params) as (read_stream, write_stream):
+        async with ClientSession(read_stream, write_stream) as session:
+            await session.initialize()
+            res = await session.list_tools()
+            specs: list[dict[str, Any]] = []
+            for t in res.tools:
+                specs.append(
+                    {
+                        "name": t.name,
+                        "description": t.description or "",
+                        "inputSchema": (t.inputSchema or {}),
+                    }
+                )
+            return specs
+
+
+async def _mcp_call_tool_async(tool_name: str, arguments: dict[str, Any]) -> Any:
+    params = _get_mcp_server_parameters()
+    async with stdio_client(params) as (read_stream, write_stream):
+        async with ClientSession(read_stream, write_stream) as session:
+            await session.initialize()
+            return await session.call_tool(tool_name, arguments=arguments)
+
 
 
 memory = InMemorySaver()
@@ -15,28 +76,17 @@ memory = InMemorySaver()
 class JobPostState(TypedDict):
     form_data: dict
     generated_post: Optional[str]
-    human_feedback: Optional[str]
+    human_feedback: Optional[Dict[str, Any]]
     approved: bool
+    linkedin_posted: bool
 
 
-
-def review_router(state):
-
-    action = state["human_feedback"]["action"]
-
-    if action == "approve":
-        return "approved"
-
-    elif action == "edit":
-        return "format"
-
-    elif action == "regenerate":
-        return "regenerate"
-    
 
 def generate_post_node(state):
 
-    data = state["form_data"]
+    data = state.get("form_data") if isinstance(state, dict) else None
+    if not data:
+        raise ValueError("Missing 'form_data' in workflow state. Start a new thread via /job-posts before calling /job-posts/{thread_id}/review.")
 
     prompt = f"""
     Create a professional job post for TekHqs Company.
@@ -90,7 +140,7 @@ def regenerate_node(state):
     Feedback:
     {feedback}
     """
-    llm = init_chat_model("gpt-4o", temperature=3.0, max_tokens=300)
+    llm = init_chat_model("gpt-4o", temperature=0.3, max_tokens=300)
     response = llm.invoke(prompt)
 
     return {
@@ -128,6 +178,41 @@ def human_review(state):
     }
 
 
+def review_router(state):
+
+    action = state["human_feedback"]["action"]
+
+    if action == "approve":
+        return "approved"
+
+    elif action == "edit":
+        return "format"
+
+    elif action == "regenerate":
+        return "regenerate"
+    
+
+def post_to_linkedin_node(state: dict) -> dict:
+    content = state.get("generated_post")
+    if not content or not str(content).strip():
+        raise ValueError("Missing 'generated_post' in workflow state; nothing to post.")
+
+    # Mark as approved when the human explicitly approved (approve path bypasses format_node).
+    approved = bool(state.get("approved"))
+    state = {**state, "approved": approved or True}
+
+    _run_coro_sync(
+        _mcp_call_tool_async(
+            "post_to_linkedin",
+            {
+                "content": str(content),
+                "headless": False,
+            },
+        )
+    )
+
+    return {**state, "linkedin_posted": True}
+
 def create_workflow_agent():
     workflow = StateGraph(JobPostState)
 
@@ -135,6 +220,7 @@ def create_workflow_agent():
     workflow.add_node("human_review", human_review)
     workflow.add_node("regenerate_post", regenerate_node)
     workflow.add_node("format_post", format_node)
+    workflow.add_node("post_to_linkedin", post_to_linkedin_node)
 
     workflow.set_entry_point("generate_job_post")
 
@@ -143,13 +229,14 @@ def create_workflow_agent():
         "human_review",
         review_router,
         {
-            "approved": "format_post",
+            "approved": "post_to_linkedin",
             "format": "format_post",
             "regenerate": "regenerate_post"
         }
     )
     workflow.add_edge("regenerate_post", "human_review")
-    workflow.add_edge("format_post", END)
+    workflow.add_edge("format_post", "post_to_linkedin")
+    workflow.add_edge("post_to_linkedin", END)
 
     graph = workflow.compile(checkpointer=memory)
     return graph
@@ -158,23 +245,99 @@ def create_workflow_agent():
 
 if __name__ == "__main__":
     import uuid
+    import sys
+
+    def _read_multiline(prompt: str) -> str:
+        print(prompt)
+        print("(Finish by typing a single line with END)")
+        lines: List[str] = []
+        while True:
+            line = input()
+            if line.strip() == "END":
+                break
+            lines.append(line)
+        return "\n".join(lines).strip()
+
+    def _prompt_human_feedback(interrupt_value: Any) -> Dict[str, Any] | None:
+        if not isinstance(interrupt_value, dict):
+            interrupt_value = {}
+
+        message = interrupt_value.get("message")
+        generated_post = interrupt_value.get("generated_post")
+
+        if message:
+            print(f"\n{message}\n")
+        if generated_post:
+            print("--- Generated Job Post (Draft) ---")
+            print(generated_post)
+            print("--- End Draft ---\n")
+
+        while True:
+            action = input("Action? [a]pprove / [e]dit / [r]egenerate / [q]uit: ").strip().lower()
+            if action in {"a", "approve"}:
+                return {"action": "approve"}
+            if action in {"e", "edit"}:
+                edited = _read_multiline("Paste the fully edited job post:")
+                return {"action": "edit", "edited_post": edited}
+            if action in {"r", "regen", "regenerate"}:
+                feedback = input("What should be changed (short feedback)? ").strip()
+                return {"action": "regenerate", "feedback": feedback}
+            if action in {"q", "quit", "exit"}:
+                return None
+            print("Invalid choice. Please enter a/e/r/q.")
+
     thread_id = str(uuid.uuid4())
     config = {
             "configurable": {"thread_id": thread_id}
             }
     
     agent = create_workflow_agent()
-    response = agent.invoke({
-    "form_data": {
-        "title": "Software Engineer",
-        "experience_level": "Mid-level",
-        "description": "We are looking for a skilled software engineer MERN Stack to join our team.",
-        "requirements": "3+ years of experience in software development, proficiency in React, TypeScript and JavaScript."
-    }
-    }, config=config)
-   
 
-    
+    initial_input = {
+        "form_data": {
+            "title": "Software Engineer",
+            "experience_level": "Mid-level",
+            "description": "We are looking for a skilled software engineer MERN Stack to join our team.",
+            "requirements": "3+ years of experience in software development, proficiency in React, TypeScript and JavaScript.",
+        }
+    }
+
+    pending = initial_input
+
+    while True:
+
+        response = agent.invoke(
+            pending,
+            config=config
+        )
+
+        # INTERRUPT DETECTED
+        if "__interrupt__" in response:
+
+            interrupts = response["__interrupt__"]
+
+            interrupt_value = interrupts[0].value
+
+            human_feedback = _prompt_human_feedback(
+                interrupt_value
+            )
+
+            if human_feedback is None:
+                print("Aborted by user.")
+                sys.exit(1)
+
+            pending = Command(
+                resume=human_feedback
+            )
+
+            continue
+
+        # WORKFLOW FINISHED
+        break
+
+
+    print("\nFINAL JOB POST:\n")
+    print(response["generated_post"])
     # try:
     #     print(agent.get_graph().draw_mermaid())
     # except Exception as e:
