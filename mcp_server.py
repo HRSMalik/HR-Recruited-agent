@@ -192,7 +192,7 @@ async def post_to_linkedin(
             # 3) Publish.
             post_button = page.get_by_role("button", name=re.compile(r"^Post$", re.I))
             await post_button.wait_for(state="visible", timeout=60000)
-            # await post_button.click(timeout=60000)
+            await post_button.click(timeout=60000)
 
             try:
                 await page.locator("div[role='dialog']").first.wait_for(state="hidden", timeout=30000)

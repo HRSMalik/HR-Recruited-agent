@@ -81,6 +81,20 @@ class JobPostState(TypedDict):
     linkedin_posted: bool
 
 
+def _append_google_form_link(content: str) -> str:
+    url = (os.getenv("GOOGLE_FORM_URL") or "").strip()
+    if not url:
+        raise ValueError(
+            "Missing GOOGLE_FORM_URL. Set GOOGLE_FORM_URL to your Google Form link so applicants can apply."
+        )
+
+    # Avoid double-appending if the content already includes the URL.
+    if url in content:
+        return content
+
+    return content.rstrip() + f"\n\nFill the form to apply: {url}" + "\n"
+
+
 
 def generate_post_node(state):
 
@@ -197,6 +211,8 @@ def post_to_linkedin_node(state: dict) -> dict:
     if not content or not str(content).strip():
         raise ValueError("Missing 'generated_post' in workflow state; nothing to post.")
 
+    final_content = _append_google_form_link(str(content))
+
     # Mark as approved when the human explicitly approved (approve path bypasses format_node).
     approved = bool(state.get("approved"))
     state = {**state, "approved": approved or True}
@@ -205,13 +221,13 @@ def post_to_linkedin_node(state: dict) -> dict:
         _mcp_call_tool_async(
             "post_to_linkedin",
             {
-                "content": str(content),
+                "content": final_content,
                 "headless": False,
             },
         )
     )
 
-    return {**state, "linkedin_posted": True}
+    return {**state, "generated_post": final_content, "linkedin_posted": True}
 
 def create_workflow_agent():
     workflow = StateGraph(JobPostState)

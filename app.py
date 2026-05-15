@@ -117,10 +117,17 @@ async def review_job_post(thread_id: str, human_feedback: HumanFeedback):
             },
         )
     except ValueError as e:
-        # Typically means the thread does not exist in the checkpointer yet.
+        msg = str(e)
+        # Some ValueErrors are user/config errors (e.g., missing GOOGLE_FORM_URL), not missing threads.
+        # Treat "missing state/thread" issues as 404, everything else as 400.
+        lowered = msg.lower()
+        is_missing_thread = (
+            "start a new thread" in lowered
+            or "thread" in lowered and "missing" in lowered and "workflow" in lowered
+        )
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(e),
+            status_code=status.HTTP_404_NOT_FOUND if is_missing_thread else status.HTTP_400_BAD_REQUEST,
+            detail=msg,
         )
     except KeyError as e:
         raise HTTPException(
