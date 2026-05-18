@@ -12,6 +12,7 @@ import asyncio
 import concurrent.futures
 import sys
 import os
+import sqlite3
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -71,7 +72,22 @@ async def _mcp_call_tool_async(tool_name: str, arguments: dict[str, Any]) -> Any
 
 
 
-memory = InMemorySaver()
+def _build_checkpointer():
+
+    db_path = os.path.join(os.path.dirname(__file__), "job_post_checkpoints.sqlite")
+
+    try:
+        from langgraph.checkpoint.sqlite import SqliteSaver  # type: ignore
+
+        conn = sqlite3.connect(db_path, check_same_thread=False)
+        return SqliteSaver(conn)
+    except Exception:  # noqa: BLE001
+        # Fallback if this LangGraph install doesn't include SqliteSaver.
+        print("using in-memory saver.", file=sys.stderr)
+        return InMemorySaver()
+
+
+memory = _build_checkpointer()
 
 class JobPostState(TypedDict):
     form_data: dict
@@ -80,12 +96,6 @@ class JobPostState(TypedDict):
     approved: bool
     linkedin_posted: bool
 
-    If we're already inside an event loop, run it in a fresh thread.
-    """
-    try:
-        asyncio.get_running_loop()
-    except RuntimeError:
-        return asyncio.run(coro)
 
 def _append_google_form_link(content: str) -> str:
     url = (os.getenv("GOOGLE_FORM_URL") or "").strip()
@@ -168,20 +178,84 @@ def regenerate_node(state):
         "generated_post": response.content
     }
 
+# def format_node(state):
+
+#     if state["human_feedback"]["action"] == "edit":
+
+#         final_post = state["human_feedback"]["edited_post"]
+
+#     else:
+#         final_post = state["generated_post"]
+
+#     return {
+#         **state,
+#         "approved": True,
+#         "generated_post": final_post
+#     }
+
 def format_node(state):
-
-    if state["human_feedback"]["action"] == "edit":
-
-        final_post = state["human_feedback"]["edited_post"]
-
+    action = (state.get("human_feedback") or {}).get("action")
+    if action == "edit":
+        raw_post = (state.get("human_feedback") or {}).get("edited_post")
     else:
-        final_post = state["generated_post"]
+        raw_post = state.get("generated_post")
 
+    if not raw_post or not str(raw_post).strip():
+        raise ValueError("Missing post content to format.")
+
+    prompt = f"""
+    format this job post, do not change the content.
+
+    IMPORTANT:
+    LinkedIn does NOT support markdown.
+
+    DO NOT use:
+    - **
+    - ##
+    - markdown syntax
+    - markdown bullets
+
+    USE INSTEAD:
+    - plain text
+    - spacing
+    - emojis
+    - unicode bullets like •
+    - separators like ━━━━━━━
+
+    Formatting style:
+    - visually clean
+    - easy to scan
+    - professional
+    - optimized for LinkedIn
+
+    Return plain text only.
+
+    JOB POST:
+    {raw_post}
+    """
+
+    llm = init_chat_model("gpt-4o", temperature=0.2)
+
+    result = llm.invoke(prompt)
+    formatted = (result.content or "").strip()
+    print("Formatted post:", formatted, file=sys.stderr)
     return {
         **state,
-        "approved": True,
-        "generated_post": final_post
+        "generated_post": formatted,
     }
+
+
+def format_router(state: dict) -> str:
+    """Route after formatting.
+
+    - When formatting a draft (no human action yet, or action=regenerate), go to human review.
+    - When formatting an edited version (action=edit), go straight to posting.
+    """
+
+    action = (state.get("human_feedback") or {}).get("action")
+    if action == "edit":
+        return "post"
+    return "review"
 
 def human_review(state):
 
@@ -203,9 +277,9 @@ def review_router(state):
     action = state["human_feedback"]["action"]
 
     if action == "approve":
-        return "approved"
+        return "post"
 
-    elif action == "edit":
+    if action == "edit":
         return "format"
 
     elif action == "regenerate":
@@ -218,10 +292,8 @@ def post_to_linkedin_node(state: dict) -> dict:
         raise ValueError("Missing 'generated_post' in workflow state; nothing to post.")
 
     final_content = _append_google_form_link(str(content))
-
-    # Mark as approved when the human explicitly approved (approve path bypasses format_node).
-    approved = bool(state.get("approved"))
-    state = {**state, "approved": approved or True}
+    print("Posting to linkedin with google form link appended", file=sys.stderr)
+    state = {**state, "approved": True}
 
     _run_coro_sync(
         _mcp_call_tool_async(
@@ -246,18 +318,25 @@ def create_workflow_agent():
 
     workflow.set_entry_point("generate_job_post")
 
-    workflow.add_edge("generate_job_post", "human_review")
+    workflow.add_edge("generate_job_post", "format_post")
+    workflow.add_conditional_edges(
+        "format_post",
+        format_router,
+        {
+            "review": "human_review",
+            "post": "post_to_linkedin",
+        },
+    )
     workflow.add_conditional_edges(
         "human_review",
         review_router,
         {
-            "approved": "post_to_linkedin",
+            "post": "post_to_linkedin",
             "format": "format_post",
-            "regenerate": "regenerate_post"
+            "regenerate": "regenerate_post",
         }
     )
-    workflow.add_edge("regenerate_post", "human_review")
-    workflow.add_edge("format_post", "post_to_linkedin")
+    workflow.add_edge("regenerate_post", "format_post")
     workflow.add_edge("post_to_linkedin", END)
 
     graph = workflow.compile(checkpointer=memory)
