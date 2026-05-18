@@ -7,6 +7,7 @@ from typing import TypedDict, Optional, List, Dict, Any
 import fitz  # PyMuPDF
 from pathlib import Path
 import base64
+import json
 import os
 from dotenv import load_dotenv
 load_dotenv()
@@ -85,7 +86,45 @@ def extract_text_from_pdf(pdf_path: str) -> str:
         return ""
     
 
+def extract_cv_details(cv_text: str) -> dict:
+    prompt = f"""
+    Extract the following information from the CV text.
 
+    Return ONLY valid JSON.
+
+    Required fields:
+    - name
+    - phone
+    - email
+    - last_education_institution
+    - last_education_degree (e.g., "Bachelor's in Computer Science", "Master's in Data Science", etc.)
+
+    Rules:
+    - If a field is missing, return an empty string
+    - Do not include explanations
+    - Do not wrap JSON in markdown
+
+    CV TEXT:
+    {cv_text}
+    """
+
+    llm = init_chat_model("gpt-4o-mini", temperature=0)
+
+    response = llm.invoke(prompt)
+
+    try:
+        json_response = json.loads(response.content)
+
+        with open("data.json", "w") as f:
+            json.dump(json_response, f)
+        return json_response
+    except Exception:
+        return {
+            "name": "",
+            "phone": "",
+            "email": "",
+            "last_education_institution": ""
+        }
 
 
 if __name__ == "__main__":
@@ -95,3 +134,4 @@ if __name__ == "__main__":
     extracted_text = extract_text_from_pdf("syedali.pdf")
     print("Extracted Text:")
     print(extracted_text)
+    print(extract_cv_details(extracted_text))
