@@ -162,19 +162,71 @@ def regenerate_node(state):
         "generated_post": response.content
     }
 
+# def format_node(state):
+
+#     if state["human_feedback"]["action"] == "edit":
+
+#         final_post = state["human_feedback"]["edited_post"]
+
+#     else:
+#         final_post = state["generated_post"]
+
+#     return {
+#         **state,
+#         "approved": True,
+#         "generated_post": final_post
+#     }
+
 def format_node(state):
-
-    if state["human_feedback"]["action"] == "edit":
-
-        final_post = state["human_feedback"]["edited_post"]
-
+    action = (state.get("human_feedback") or {}).get("action")
+    if action == "edit":
+        raw_post = (state.get("human_feedback") or {}).get("edited_post")
     else:
-        final_post = state["generated_post"]
+        raw_post = state.get("generated_post")
 
+    if not raw_post or not str(raw_post).strip():
+        raise ValueError("Missing post content to format.")
+
+    prompt = f"""
+    format this job post, do not change the content.
+
+    IMPORTANT:
+    LinkedIn does NOT support markdown.
+
+    DO NOT use:
+    - **
+    - ##
+    - markdown syntax
+    - markdown bullets
+
+    USE INSTEAD:
+    - plain text
+    - spacing
+    - emojis
+    - unicode bullets like •
+    - separators like ━━━━━━━
+
+    Formatting style:
+    - visually clean
+    - easy to scan
+    - professional
+    - optimized for LinkedIn
+
+    Return plain text only.
+
+    JOB POST:
+    {raw_post}
+    """
+
+    llm = init_chat_model("gpt-4o", temperature=0.2)
+
+    result = llm.invoke(prompt)
+    formatted = (result.content or "").strip()
+    print("Formatted post:", formatted, file=sys.stderr)
     return {
         **state,
         "approved": True,
-        "generated_post": final_post
+        "generated_post": formatted,
     }
 
 def human_review(state):
@@ -196,10 +248,7 @@ def review_router(state):
 
     action = state["human_feedback"]["action"]
 
-    if action == "approve":
-        return "approved"
-
-    elif action == "edit":
+    if action in {"approve", "edit"}:
         return "format"
 
     elif action == "regenerate":
@@ -212,10 +261,8 @@ def post_to_linkedin_node(state: dict) -> dict:
         raise ValueError("Missing 'generated_post' in workflow state; nothing to post.")
 
     final_content = _append_google_form_link(str(content))
-
-    # Mark as approved when the human explicitly approved (approve path bypasses format_node).
-    approved = bool(state.get("approved"))
-    state = {**state, "approved": approved or True}
+    print("Posting to linkedin with google form link appended", file=sys.stderr)
+    state = {**state, "approved": bool(state.get("approved"))}
 
     _run_coro_sync(
         _mcp_call_tool_async(
@@ -245,7 +292,6 @@ def create_workflow_agent():
         "human_review",
         review_router,
         {
-            "approved": "post_to_linkedin",
             "format": "format_post",
             "regenerate": "regenerate_post"
         }
