@@ -96,12 +96,6 @@ class JobPostState(TypedDict):
     approved: bool
     linkedin_posted: bool
 
-    If we're already inside an event loop, run it in a fresh thread.
-    """
-    try:
-        asyncio.get_running_loop()
-    except RuntimeError:
-        return asyncio.run(coro)
 
 def _append_google_form_link(content: str) -> str:
     url = (os.getenv("GOOGLE_FORM_URL") or "").strip()
