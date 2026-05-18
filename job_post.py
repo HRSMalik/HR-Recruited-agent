@@ -225,9 +225,21 @@ def format_node(state):
     print("Formatted post:", formatted, file=sys.stderr)
     return {
         **state,
-        "approved": True,
         "generated_post": formatted,
     }
+
+
+def format_router(state: dict) -> str:
+    """Route after formatting.
+
+    - When formatting a draft (no human action yet, or action=regenerate), go to human review.
+    - When formatting an edited version (action=edit), go straight to posting.
+    """
+
+    action = (state.get("human_feedback") or {}).get("action")
+    if action == "edit":
+        return "post"
+    return "review"
 
 def human_review(state):
 
@@ -248,7 +260,10 @@ def review_router(state):
 
     action = state["human_feedback"]["action"]
 
-    if action in {"approve", "edit"}:
+    if action == "approve":
+        return "post"
+
+    if action == "edit":
         return "format"
 
     elif action == "regenerate":
@@ -262,7 +277,7 @@ def post_to_linkedin_node(state: dict) -> dict:
 
     final_content = _append_google_form_link(str(content))
     print("Posting to linkedin with google form link appended", file=sys.stderr)
-    state = {**state, "approved": bool(state.get("approved"))}
+    state = {**state, "approved": True}
 
     _run_coro_sync(
         _mcp_call_tool_async(
@@ -287,17 +302,25 @@ def create_workflow_agent():
 
     workflow.set_entry_point("generate_job_post")
 
-    workflow.add_edge("generate_job_post", "human_review")
+    workflow.add_edge("generate_job_post", "format_post")
+    workflow.add_conditional_edges(
+        "format_post",
+        format_router,
+        {
+            "review": "human_review",
+            "post": "post_to_linkedin",
+        },
+    )
     workflow.add_conditional_edges(
         "human_review",
         review_router,
         {
+            "post": "post_to_linkedin",
             "format": "format_post",
-            "regenerate": "regenerate_post"
+            "regenerate": "regenerate_post",
         }
     )
-    workflow.add_edge("regenerate_post", "human_review")
-    workflow.add_edge("format_post", "post_to_linkedin")
+    workflow.add_edge("regenerate_post", "format_post")
     workflow.add_edge("post_to_linkedin", END)
 
     graph = workflow.compile(checkpointer=memory)
