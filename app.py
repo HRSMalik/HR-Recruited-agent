@@ -123,7 +123,8 @@ async def review_job_post(thread_id: str, human_feedback: HumanFeedback):
         lowered = msg.lower()
         is_missing_thread = (
             "start a new thread" in lowered
-            or "thread" in lowered and "missing" in lowered and "workflow" in lowered
+            or ("thread" in lowered and "missing" in lowered and "workflow" in lowered)
+            or "unknown or expired thread" in lowered
         )
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND if is_missing_thread else status.HTTP_400_BAD_REQUEST,

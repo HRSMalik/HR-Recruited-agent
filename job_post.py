@@ -12,6 +12,7 @@ import asyncio
 import concurrent.futures
 import sys
 import os
+import sqlite3
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -71,7 +72,22 @@ async def _mcp_call_tool_async(tool_name: str, arguments: dict[str, Any]) -> Any
 
 
 
-memory = InMemorySaver()
+def _build_checkpointer():
+
+    db_path = os.path.join(os.path.dirname(__file__), "job_post_checkpoints.sqlite")
+
+    try:
+        from langgraph.checkpoint.sqlite import SqliteSaver  # type: ignore
+
+        conn = sqlite3.connect(db_path, check_same_thread=False)
+        return SqliteSaver(conn)
+    except Exception:  # noqa: BLE001
+        # Fallback if this LangGraph install doesn't include SqliteSaver.
+        print("using in-memory saver.", file=sys.stderr)
+        return InMemorySaver()
+
+
+memory = _build_checkpointer()
 
 class JobPostState(TypedDict):
     form_data: dict
