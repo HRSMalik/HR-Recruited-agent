@@ -100,7 +100,7 @@ def extract_text_from_pdf(pdf_path: str, work_dir: str) -> str:
         return ""
     
 
-def extract_cv_details(cv_text: str, cv_id: str, output_dir: str = "extracted_data") -> dict:
+def extract_cv_details(cv_text: str, cv_id: str) -> dict:
     prompt = f"""
     Extract the following information from the CV text.
 
@@ -134,6 +134,7 @@ def extract_cv_details(cv_text: str, cv_id: str, output_dir: str = "extracted_da
 
     try:
         json_response = json.loads(response.content)
+        json_response["raw_cv_text"] = cv_text
     except Exception:
         json_response = {
             "name": "",
@@ -142,13 +143,10 @@ def extract_cv_details(cv_text: str, cv_id: str, output_dir: str = "extracted_da
             "last_education_institution": "",
             "last_education_degree": "",
             "experience_years": "",
-            "freelance_experience_years": ""
+            "freelance_experience_years": "",
+            "raw_cv_text": cv_text
         }
 
-    # out_dir = Path(output_dir)
-    # out_dir.mkdir(parents=True, exist_ok=True)
-    # with open(out_dir / f"{cv_id}.json", "w") as f:
-    #     json.dump(json_response, f)
 
     _get_candidates_collection().replace_one(
         {"_id": cv_id},
@@ -165,7 +163,7 @@ def process_cv(pdf_path: str, pages_root: str = "pdf_pages", extracted_root: str
     work_dir = Path(pages_root) / cv_id
     try:
         cv_text = extract_text_from_pdf(pdf_path, str(work_dir))
-        data = extract_cv_details(cv_text, cv_id, extracted_root)
+        data = extract_cv_details(cv_text, cv_id)
         return {"id": cv_id, "data": data}
     finally:
         if work_dir.exists():
