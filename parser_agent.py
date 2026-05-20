@@ -12,8 +12,22 @@ import os
 import shutil
 import uuid
 from datetime import date
+from pymongo import MongoClient
 from dotenv import load_dotenv
 load_dotenv()
+
+
+_MONGO_COLLECTION = None
+
+
+def _get_candidates_collection():
+    """Lazily build and cache the MongoDB `candidates_info` collection handle."""
+    global _MONGO_COLLECTION
+    if _MONGO_COLLECTION is None:
+        uri = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
+        db_name = os.getenv("MONGODB_DB", "recruitment-module")
+        _MONGO_COLLECTION = MongoClient(uri)[db_name]["candidates_info"]
+    return _MONGO_COLLECTION
 
 class ParserAgentState(TypedDict):
     pass
@@ -136,6 +150,12 @@ def extract_cv_details(cv_text: str, cv_id: str, output_dir: str = "extracted_da
     with open(out_dir / f"{cv_id}.json", "w") as f:
         json.dump(json_response, f)
 
+    _get_candidates_collection().replace_one(
+        {"_id": cv_id},
+        {**json_response, "_id": cv_id},
+        upsert=True,
+    )
+
     return json_response
 
 
@@ -153,5 +173,5 @@ def process_cv(pdf_path: str, pages_root: str = "pdf_pages", extracted_root: str
 
 
 if __name__ == "__main__":
-    result = process_cv("harisjaved.pdf")
+    result = process_cv("syedali.pdf")
     print(result)

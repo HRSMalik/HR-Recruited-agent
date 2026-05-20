@@ -12,3 +12,4 @@ streamlit
 playwright
 mcp[cli]==1.27.0
 pymupdf
+pymongo
