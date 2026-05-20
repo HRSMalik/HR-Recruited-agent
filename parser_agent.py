@@ -145,10 +145,10 @@ def extract_cv_details(cv_text: str, cv_id: str, output_dir: str = "extracted_da
             "freelance_experience_years": ""
         }
 
-    out_dir = Path(output_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    with open(out_dir / f"{cv_id}.json", "w") as f:
-        json.dump(json_response, f)
+    # out_dir = Path(output_dir)
+    # out_dir.mkdir(parents=True, exist_ok=True)
+    # with open(out_dir / f"{cv_id}.json", "w") as f:
+    #     json.dump(json_response, f)
 
     _get_candidates_collection().replace_one(
         {"_id": cv_id},
@@ -173,5 +173,5 @@ def process_cv(pdf_path: str, pages_root: str = "pdf_pages", extracted_root: str
 
 
 if __name__ == "__main__":
-    result = process_cv("syedali.pdf")
+    result = process_cv("faiz.pdf")
     print(result)
