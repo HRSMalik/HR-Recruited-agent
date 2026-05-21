@@ -99,7 +99,7 @@ with st.form("job_form"):
             response = requests.post(
                 f"{API_BASE}/job-posts",
                 json=payload,
-                timeout=60,
+                timeout=300,
             )
         except requests.RequestException as e:
             st.error("Failed to call API.")
@@ -181,7 +181,7 @@ if st.session_state.generated_post:
                 response = requests.post(
                     f"{API_BASE}/job-posts/{st.session_state.thread_id}/review",
                     json=payload,
-                    timeout=120,
+                    timeout=700,
                 )
             except requests.RequestException as e:
                 st.error("Failed to call API.")
