@@ -1,5 +1,26 @@
 from pydantic import BaseModel, Field
-from typing import Optional, Any, Literal
+from typing import Optional, Any, Literal, List
+
+
+class Candidate(BaseModel):
+    id: str = Field(..., alias="_id")
+    name: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    last_education_institution: Optional[str] = None
+    last_education_degree: Optional[str] = None
+    experience_years: Optional[str] = None
+    freelance_experience_years: Optional[str] = None
+    raw_cv_text: Optional[str] = None
+
+    model_config = {"populate_by_name": True}
+
+
+class CandidateListResponse(BaseModel):
+    items: List[Candidate]
+    total: int
+    skip: int
+    limit: int
 
 
 class JobPostAgentRequest(BaseModel):
