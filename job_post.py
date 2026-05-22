@@ -80,10 +80,11 @@ def _build_checkpointer():
         from langgraph.checkpoint.sqlite import SqliteSaver  # type: ignore
 
         conn = sqlite3.connect(db_path, check_same_thread=False)
-        return SqliteSaver(conn)
-    except Exception:  # noqa: BLE001
-        # Fallback if this LangGraph install doesn't include SqliteSaver.
-        print("using in-memory saver.", file=sys.stderr)
+        saver = SqliteSaver(conn)
+        saver.setup()
+        return saver
+    except Exception as e:  # noqa: BLE001
+        print(f"using in-memory saver. SqliteSaver unavailable: {e!r}", file=sys.stderr)
         return InMemorySaver()
 
 
