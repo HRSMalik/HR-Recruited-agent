@@ -30,3 +30,5 @@ Thumbs.db
 __pycache__/
 linkedin_storage_state.json
 extracted_data/
+
+*.pdf
