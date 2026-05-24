@@ -37,3 +37,5 @@ extracted_data/
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal
+
+.claude/

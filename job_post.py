@@ -13,8 +13,22 @@ import concurrent.futures
 import sys
 import os
 import sqlite3
+from pymongo import MongoClient
 from dotenv import load_dotenv
 load_dotenv()
+
+
+_JOB_DESCRIPTIONS_COLLECTION = None
+
+
+def _get_job_descriptions_collection():
+    """Lazily build and cache the MongoDB `job_descriptions` collection handle."""
+    global _JOB_DESCRIPTIONS_COLLECTION
+    if _JOB_DESCRIPTIONS_COLLECTION is None:
+        uri = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
+        db_name = os.getenv("MONGODB_DB", "recruitment-module")
+        _JOB_DESCRIPTIONS_COLLECTION = MongoClient(uri)[db_name]["job_descriptions"]
+    return _JOB_DESCRIPTIONS_COLLECTION
 
 
 
@@ -287,7 +301,7 @@ def review_router(state):
         return "regenerate"
     
 
-def post_to_linkedin_node(state: dict) -> dict:
+def post_to_linkedin_node(state: dict, config: dict) -> dict:
     content = state.get("generated_post")
     if not content or not str(content).strip():
         raise ValueError("Missing 'generated_post' in workflow state; nothing to post.")
@@ -304,6 +318,13 @@ def post_to_linkedin_node(state: dict) -> dict:
                 "headless": False,
             },
         )
+    )
+
+    thread_id = (config.get("configurable") or {}).get("thread_id")
+    _get_job_descriptions_collection().replace_one(
+        {"_id": thread_id},
+        {"_id": thread_id, "job_description": final_content},
+        upsert=True,
     )
 
     return {**state, "generated_post": final_content, "linkedin_posted": True}
