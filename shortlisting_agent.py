@@ -1,0 +1,110 @@
+import os
+import re
+from typing import List, Optional
+from langchain.chat_models import init_chat_model
+from pymongo import MongoClient
+from dotenv import load_dotenv
+
+load_dotenv()
+
+
+_DB = None
+
+
+def _get_db():
+    global _DB
+    if _DB is None:
+        uri = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
+        db_name = os.getenv("MONGODB_DB", "recruitment-module")
+        _DB = MongoClient(uri)[db_name]
+    return _DB
+
+
+def _candidates():
+    return _get_db()["candidates_info"]
+
+
+def _job_descriptions():
+    return _get_db()["job_descriptions"]
+
+
+def _shortlist_results():
+    return _get_db()["shortlist_results"]
+
+
+def _score_candidate_against_jd(candidate: dict, jd_text: str) -> int:
+    """Ask the LLM to score 0-100 how well the candidate fits the JD."""
+    candidate_summary = {
+        "name": candidate.get("name"),
+        "experience_years": candidate.get("experience_years"),
+        "freelance_experience_years": candidate.get("freelance_experience_years"),
+        "last_education_degree": candidate.get("last_education_degree"),
+        "last_education_institution": candidate.get("last_education_institution"),
+        "raw_cv_text": candidate.get("raw_cv_text", ""),
+    }
+
+    prompt = f"""
+    You are evaluating whether a candidate is a fit for a job.
+
+    JOB DESCRIPTION:
+    {jd_text}
+
+    CANDIDATE:
+    {candidate_summary}
+
+    Compare the candidate's skills and experience against the job description.
+    Return ONLY a single integer between 0 and 100 representing the fit percentage.
+    No explanation, no other text, just the number.
+    """
+
+    llm = init_chat_model("gpt-4o-mini", temperature=0)
+    response = llm.invoke(prompt)
+    raw = (response.content or "").strip()
+
+    match = re.search(r"\d{1,3}", raw)
+    if not match:
+        return 0
+    score = int(match.group(0))
+    return max(0, min(100, score))
+
+
+def shortlist_for_jd(jd_id: str) -> List[dict]:
+    """Score every candidate linked to `jd_id` against that job's description.
+
+    Stores one document per (jd_id, cv_id) in `shortlist_results`. Returns the
+    list of results sorted by fit_percent descending.
+    """
+    jd_doc = _job_descriptions().find_one({"_id": jd_id})
+    if not jd_doc:
+        raise ValueError(f"No job_description found for jd_id={jd_id!r}.")
+    jd_text = jd_doc.get("job_description", "")
+    if not jd_text.strip():
+        raise ValueError(f"job_description for jd_id={jd_id!r} is empty.")
+
+    candidates = list(_candidates().find({"jd_id": jd_id}))
+    if not candidates:
+        return []
+
+    results = []
+    for candidate in candidates:
+        cv_id = candidate.get("_id")
+        score = _score_candidate_against_jd(candidate, jd_text)
+        doc = {"jd_id": jd_id, "cv_id": cv_id, "fit_percent": score}
+        _shortlist_results().replace_one(
+            {"jd_id": jd_id, "cv_id": cv_id},
+            doc,
+            upsert=True,
+        )
+        results.append(doc)
+
+    results.sort(key=lambda d: d["fit_percent"], reverse=True)
+    return results
+
+
+if __name__ == "__main__":
+    import sys
+    if len(sys.argv) < 2:
+        print("Usage: python shorlisting_agent.py <jd_id>")
+        sys.exit(1)
+    for r in shortlist_for_jd(sys.argv[1]):
+        print(f"{r['fit_percent']:3d}%  cv_id={r['cv_id']}")
