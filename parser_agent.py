@@ -100,7 +100,7 @@ def extract_text_from_pdf(pdf_path: str, work_dir: str) -> str:
         return ""
     
 
-def extract_cv_details(cv_text: str, cv_id: str) -> dict:
+def extract_cv_details(cv_text: str, cv_id: str, jd_id: Optional[str] = None) -> dict:
     prompt = f"""
     Extract the following information from the CV text.
 
@@ -150,20 +150,20 @@ def extract_cv_details(cv_text: str, cv_id: str) -> dict:
 
     _get_candidates_collection().replace_one(
         {"_id": cv_id},
-        {**json_response, "_id": cv_id},
+        {**json_response, "_id": cv_id, "jd_id": jd_id},
         upsert=True,
     )
 
     return json_response
 
 
-def process_cv(pdf_path: str, pages_root: str = "pdf_pages", extracted_root: str = "extracted_data",) -> dict:
+def process_cv(pdf_path: str, jd_id: Optional[str] = None, pages_root: str = "pdf_pages", extracted_root: str = "extracted_data",) -> dict:
 
     cv_id = str(uuid.uuid4())
     work_dir = Path(pages_root) / cv_id
     try:
         cv_text = extract_text_from_pdf(pdf_path, str(work_dir))
-        data = extract_cv_details(cv_text, cv_id)
+        data = extract_cv_details(cv_text, cv_id, jd_id)
         return {"id": cv_id, "data": data}
     finally:
         if work_dir.exists():
