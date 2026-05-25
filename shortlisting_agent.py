@@ -85,13 +85,21 @@ def shortlist_for_jd(jd_id: str) -> List[dict]:
     if not candidates:
         return []
 
+    already_scored = {
+        d["_id"]
+        for d in _shortlist_results().find({"jd_id": jd_id}, {"_id": 1})
+    }
+    candidates = [c for c in candidates if c.get("_id") not in already_scored]
+    if not candidates:
+        return []
+
     results = []
     for candidate in candidates:
         cv_id = candidate.get("_id")
         score = _score_candidate_against_jd(candidate, jd_text)
-        doc = {"jd_id": jd_id, "cv_id": cv_id, "fit_percent": score}
+        doc = {"_id": cv_id, "jd_id": jd_id, "fit_percent": score}
         _shortlist_results().replace_one(
-            {"jd_id": jd_id, "cv_id": cv_id},
+            {"_id": cv_id},
             doc,
             upsert=True,
         )
@@ -101,10 +109,26 @@ def shortlist_for_jd(jd_id: str) -> List[dict]:
     return results
 
 
+def shortlist_all_jobs() -> dict:
+    """Run shortlisting across every job in `job_descriptions`.
+
+    Returns a summary keyed by jd_id. Failures on one job don't block the others.
+    """
+    summary: dict = {}
+    for jd in _job_descriptions().find({}, {"_id": 1}):
+        jd_id = jd["_id"]
+        try:
+            results = shortlist_for_jd(jd_id)
+            summary[jd_id] = {"scored": len(results)}
+        except Exception as e:  # noqa: BLE001
+            summary[jd_id] = {"error": repr(e)}
+    return summary
+
+
 if __name__ == "__main__":
     import sys
     if len(sys.argv) < 2:
-        print("Usage: python shorlisting_agent.py <jd_id>")
+        print("Usage: python shortlisting_agent.py <jd_id>")
         sys.exit(1)
     for r in shortlist_for_jd(sys.argv[1]):
         print(f"{r['fit_percent']:3d}%  cv_id={r['cv_id']}")
