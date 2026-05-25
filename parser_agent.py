@@ -1,18 +1,17 @@
 from langchain.chat_models import init_chat_model
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langgraph.graph import StateGraph, END
-from typing import TypedDict, List, Dict, Any, Optional
+from langgraph.prebuilt import create_react_agent
+from langgraph.checkpoint.memory import InMemorySaver
+from typing import TypedDict, Optional, List, Dict, Any
 import fitz  # PyMuPDF
 from pathlib import Path
 import base64
-import csv
 import json
 import os
-import re
 import shutil
 import uuid
 from datetime import date
-from io import StringIO
-import requests
 from pymongo import MongoClient
 from dotenv import load_dotenv
 load_dotenv()
@@ -30,22 +29,13 @@ def _get_candidates_collection():
         _MONGO_COLLECTION = MongoClient(uri)[db_name]["candidates_info"]
     return _MONGO_COLLECTION
 
-
-class ParserAgentState(TypedDict, total=False):
-    pdf_path: str
-    pages_root: str
-    cv_id: str
-    work_dir: str
-    image_paths: List[str]
-    cv_text: str
-    extracted_data: Dict[str, Any]
-    form_experience_str: str
-    llm_experience_years: float
-    jd_id: str
-    saved: bool
+class ParserAgentState(TypedDict):
+    pass
 
 
-def pdf_to_images(pdf_path: str, output_dir: str) -> str:
+
+
+def pdf_to_images(pdf_path, output_dir):
     """Render each PDF page to PNG inside output_dir."""
     pdf_path = Path(pdf_path)
     output_dir = Path(output_dir)
@@ -63,138 +53,78 @@ def pdf_to_images(pdf_path: str, output_dir: str) -> str:
     return str(output_dir)
 
 
-def init_node(state: ParserAgentState) -> ParserAgentState:
-    if not state.get("pdf_path"):
-        raise ValueError("Missing 'pdf_path' in parser state.")
-    pages_root = state.get("pages_root") or "pdf_pages"
-    cv_id = str(uuid.uuid4())
-    work_dir = str(Path(pages_root) / cv_id)
-    return {**state, "cv_id": cv_id, "work_dir": work_dir}
 
-
-def render_pages_node(state: ParserAgentState) -> ParserAgentState:
-    folder = pdf_to_images(state["pdf_path"], state["work_dir"])
-    image_paths = sorted(
-        str(Path(folder) / f)
-        for f in os.listdir(folder)
-        if f.lower().endswith((".png", ".jpg", ".jpeg"))
-    )
-    return {**state, "image_paths": image_paths}
-
-
-def ocr_node(state: ParserAgentState) -> ParserAgentState:
-    doc = fitz.open(state["pdf_path"])
+def extract_text_from_pdf(pdf_path: str, work_dir: str) -> str:
+    """Render PDF pages into work_dir and OCR them with the OpenAI vision model."""
+    folder_path = pdf_to_images(pdf_path, work_dir)
     try:
-        extracted_text = "\n".join(page.get_text() for page in doc)
-    finally:
-        doc.close()
-    return {**state, "cv_text": extracted_text}
+        image_paths = sorted(
+            f for f in os.listdir(folder_path) if f.endswith((".png", ".jpg", ".jpeg"))
+        )
+        extracted_text = ""
 
+        from openai import OpenAI
+        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-def _parse_role_date(s):
-    if not s:
-        return None
-    s = str(s).strip().lower()
-    if s in ("present", "current", "now", "ongoing", "today"):
-        return date.today()
-    m = re.match(r"^(\d{4})-(\d{1,2})", s)
-    if m:
-        year, month = int(m.group(1)), max(1, min(12, int(m.group(2))))
-        return date(year, month, 1)
-    m = re.match(r"^(\d{4})$", s)
-    if m:
-        return date(int(m.group(1)), 1, 1)
-    return None
+        for image_path in image_paths:
+            with open(os.path.join(folder_path, image_path), "rb") as f:
+                image_data = base64.b64encode(f.read()).decode("utf-8")
 
+                ext = os.path.splitext(image_path)[-1].lower()
+                mime_map = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg"}
+                mime_type = mime_map.get(ext, "image/png")
 
-def _months_between(start, end):
-    """Months in the half-open interval [start, end). Standard CV-duration semantics."""
-    months = set()
-    if not start or not end or start >= end:
-        return months
-    y, m = start.year, start.month
-    while (y, m) < (end.year, end.month):
-        months.add((y, m))
-        m += 1
-        if m > 12:
-            m = 1
-            y += 1
-    return months
+                response = client.chat.completions.create(
+                    model="gpt-4o",
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "image_url",
+                                    "image_url": {"url": f"data:{mime_type};base64,{image_data}"}
+                                },
+                                {
+                                    "type": "text",
+                                    "text": "Extract and return all the text visible in this image. Return only the extracted text, nothing else."
+                                }
+                            ]
+                        }
+                    ],
+                    max_tokens=2000
+                )
+                extracted_text += response.choices[0].message.content.strip() + "\n"
+        return extracted_text
+    except Exception as e:
+        print(f"Error extracting text from image: {e}")
+        return ""
+    
 
-
-def _compute_experience(roles):
-    """Given LLM-extracted role list, return (professional_years, freelance_years) as exact decimals."""
-    professional_months = set()
-    freelance_months = set()
-
-    if not isinstance(roles, list):
-        return 0.0, 0.0
-
-    for role in roles:
-        if not isinstance(role, dict):
-            continue
-        kind = (role.get("kind") or "professional").strip().lower()
-        start = _parse_role_date(role.get("start"))
-        end = _parse_role_date(role.get("end")) or date.today()
-        months = _months_between(start, end)
-        if not months:
-            continue
-        if kind == "internship":
-            continue
-        if kind == "freelance":
-            freelance_months |= months
-        else:
-            professional_months |= months
-
-    return (
-        round(len(professional_months) / 12, 2),
-        round(len(freelance_months) / 12, 2),
-    )
-
-
-def extract_fields_node(state: ParserAgentState) -> ParserAgentState:
-    cv_text = state["cv_text"]
-
+def extract_cv_details(cv_text: str, cv_id: str, jd_id: Optional[str] = None) -> dict:
     prompt = f"""
     Extract the following information from the CV text.
 
-    Return ONLY valid JSON (no markdown, no commentary).
+    Return ONLY valid JSON.
 
     Required fields:
     - name
     - phone
     - email
     - last_education_institution
-    - last_education_degree (e.g., "Bachelor's in Computer Science")
-    - experience_roles: a JSON ARRAY of work history records.
+    - last_education_degree (e.g., "Bachelor's in Computer Science", "Master's in Data Science", etc.)
+    - experience_years (total years of relevant work experience)
+    - freelance_experience_years (total years of freelance experience, if any)(optional)
 
-    For each role in the CV, add one object to experience_roles:
-    {{
-      "title": "<job title>",
-      "company": "<employer>",
-      "start": "<YYYY-MM>",
-      "end": "<YYYY-MM or 'present'>",
-      "kind": "professional" | "internship" | "freelance"
-    }}
+    Rules:
+    - If a field is missing, return an empty string
+    - Do not include explanations
+    - Do not wrap JSON in markdown
+    - to get experience, count time from their jobs start date and end dates to get total number of year
+    - get the experience in exact years, if experience starts from mar 2018 and ends in jan 2020, then experience is 1.8 years and so on, if it mentions jun 2018 to present then todays date is {date.today()} count the experience accordingly.
+    - count freelance experience separately i.e. (upwork, fiverr, etc.)
+    - do not add freelance experience in experience_years field, it should be only in freelance_experience_years field
 
-    Rules for experience_roles:
-    - DO NOT compute or sum durations. Just extract dates.
-    - Use YYYY-MM format when the month is explicit in the CV.
-    - If ONLY the year is given (e.g., "2023 - Present"), return just the year ("2023"), NOT "2023-01".
-    - If the role is currently ongoing, end = "present".
-    - kind = "internship" only for unpaid or explicitly labeled intern roles.
-    - kind = "freelance" only for Upwork/Fiverr/gig platforms.
-    - All other roles (Projects-Based, Contract, Part-time, Full-time) are "professional".
-    - ONLY include actual employment at a named company/organization.
-      DO NOT include: personal projects, academic projects, university final-year projects,
-      portfolio items, hackathon entries, side projects, or anything where the "employer"
-      is just a project name. If you cannot identify a real employer/company for the role,
-      DO NOT include it.
-
-    Other rules:
-    - If a non-experience field is missing, return an empty string.
-    - Do not wrap JSON in markdown.
-
+    
     CV TEXT:
     {cv_text}
     """
@@ -203,199 +133,43 @@ def extract_fields_node(state: ParserAgentState) -> ParserAgentState:
     response = llm.invoke(prompt)
 
     try:
-        data = json.loads(response.content)
+        json_response = json.loads(response.content)
+        json_response["raw_cv_text"] = cv_text
     except Exception:
-        data = {
+        json_response = {
             "name": "",
             "phone": "",
             "email": "",
             "last_education_institution": "",
             "last_education_degree": "",
-            "experience_roles": [],
+            "experience_years": "",
+            "freelance_experience_years": "",
+            "raw_cv_text": cv_text
         }
 
-    roles = data.get("experience_roles") or []
-    prof_years, freelance_years = _compute_experience(roles)
-    data["experience_years"] = prof_years
-    data["freelance_experience_years"] = freelance_years
 
-    data["raw_cv_text"] = cv_text
-    return {**state, "extracted_data": data}
-
-
-_CANONICAL_SHEET_HEADERS = ["Timestamp", "Name", "Email", "Experience", "Resume", "Job Reference Code", "Extra"]
-
-
-def _read_sheet_rows(csv_text: str) -> list[dict]:
-    reader = csv.reader(StringIO(csv_text))
-    rows = list(reader)
-    if not rows:
-        return []
-    raw_headers = rows[0]
-    if all((h or "").lower().startswith("column ") for h in raw_headers if h):
-        headers = _CANONICAL_SHEET_HEADERS[: len(raw_headers)]
-    else:
-        headers = raw_headers
-    return [dict(zip(headers, r + [""] * (len(headers) - len(r)))) for r in rows[1:]]
-
-
-def fetch_form_response_node(state: ParserAgentState) -> ParserAgentState:
-    sheet_id = os.getenv("GOOGLE_SHEET_ID")
-    email = ((state.get("extracted_data") or {}).get("email") or "").strip().lower()
-    if not sheet_id or not email:
-        return {**state, "form_experience_str": "", "jd_id": ""}
-
-    url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv"
-    try:
-        resp = requests.get(url, timeout=30)
-        resp.raise_for_status()
-    except Exception:
-        return {**state, "form_experience_str": "", "jd_id": ""}
-
-    thread_col_env = os.getenv("GOOGLE_SHEET_THREAD_COLUMN")
-    for row in _read_sheet_rows(resp.text):
-        if (row.get("Email") or "").strip().lower() == email:
-            jd_id = (row.get("Job Reference Code") or row.get(thread_col_env or "") or "").strip()
-            return {
-                **state,
-                "form_experience_str": (row.get("Experience") or "").strip(),
-                "jd_id": jd_id,
-            }
-
-    return {**state, "form_experience_str": "", "jd_id": ""}
-
-
-def relookup_experience_node(state: ParserAgentState) -> ParserAgentState:
-    cv_text = state.get("cv_text") or ""
-    if not cv_text.strip():
-        return {**state, "llm_experience_years": 0.0}
-
-    prompt = f"""
-    Calculate the candidate's total years of professional work experience from the CV text below.
-
-    Rules:
-    - Sum the duration of each non-freelance, non-internship professional role.
-    - For roles ending "present", today's date is {date.today()}.
-    - Return ONLY a single decimal number (e.g. 2.5). No words, no units.
-
-    CV TEXT:
-    {cv_text}
-    """
-
-    llm = init_chat_model("gpt-4o-mini", temperature=0)
-    response = llm.invoke(prompt)
-
-    match = re.search(r"-?\d+(?:\.\d+)?", response.content or "")
-    value = float(match.group()) if match else 0.0
-    return {**state, "llm_experience_years": value}
-
-
-def _parse_form_experience(s: str):
-    if not s:
-        return None, False
-    is_threshold = "+" in s
-    match = re.search(r"-?\d+(?:\.\d+)?", s)
-    return (float(match.group()), is_threshold) if match else (None, False)
-
-
-def validate_experience_node(state: ParserAgentState) -> ParserAgentState:
-    extracted = dict(state.get("extracted_data") or {})
-    form_str = state.get("form_experience_str", "")
-    llm_val = float(state.get("llm_experience_years") or 0.0)
-
-    cv_raw = extracted.get("experience_years", "")
-    try:
-        cv_val = float(cv_raw) if cv_raw not in ("", None) else None
-    except (TypeError, ValueError):
-        cv_val = None
-
-    n, is_threshold = _parse_form_experience(form_str)
-
-    if cv_val is None or n is None:
-        result = "No"
-    elif is_threshold:
-        result = "Yes" if (llm_val >= n and cv_val >= n) else "No"
-    else:
-        result = "Yes" if (abs(llm_val - n) <= 0.2 and abs(cv_val - n) <= 0.2) else "No"
-
-    extracted["validate_experience"] = result
-    return {**state, "extracted_data": extracted}
-
-
-def persist_node(state: ParserAgentState) -> ParserAgentState:
-    cv_id = state["cv_id"]
-    data = dict(state["extracted_data"])
-    data["jd_id"] = state.get("jd_id", "")
     _get_candidates_collection().replace_one(
         {"_id": cv_id},
-        {**data, "_id": cv_id},
+        {**json_response, "_id": cv_id, "jd_id": jd_id},
         upsert=True,
     )
-    return {**state, "saved": True}
+
+    return json_response
 
 
-def cleanup_node(state: ParserAgentState) -> ParserAgentState:
-    work_dir = Path(state["work_dir"])
-    if work_dir.exists():
-        shutil.rmtree(work_dir, ignore_errors=True)
-    return state
+def process_cv(pdf_path: str, jd_id: Optional[str] = None, pages_root: str = "pdf_pages", extracted_root: str = "extracted_data",) -> dict:
 
-
-def create_parser_agent():
-    workflow = StateGraph(ParserAgentState)
-
-    workflow.add_node("init", init_node)
-    workflow.add_node("render_pages", render_pages_node)
-    workflow.add_node("ocr", ocr_node)
-    workflow.add_node("extract_fields", extract_fields_node)
-    workflow.add_node("fetch_form", fetch_form_response_node)
-    workflow.add_node("relookup_experience", relookup_experience_node)
-    workflow.add_node("validate_experience", validate_experience_node)
-    workflow.add_node("persist", persist_node)
-    workflow.add_node("cleanup", cleanup_node)
-
-    workflow.set_entry_point("init")
-    workflow.add_edge("init", "render_pages")
-    workflow.add_edge("render_pages", "ocr")
-    workflow.add_edge("ocr", "extract_fields")
-    workflow.add_edge("extract_fields", "fetch_form")
-    workflow.add_edge("fetch_form", "relookup_experience")
-    workflow.add_edge("relookup_experience", "validate_experience")
-    workflow.add_edge("validate_experience", "persist")
-    workflow.add_edge("persist", "cleanup")
-    workflow.add_edge("cleanup", END)
-
-    return workflow.compile()
-
-
-parser_agent = create_parser_agent()
-
-
-def process_cv(pdf_path: str, jd_id: Optional[str] = None, pages_root: str = "pdf_pages") -> dict:
-    initial_state: ParserAgentState = {
-        "pdf_path": pdf_path,
-        "pages_root": pages_root,
-    }
-    if jd_id:
-        initial_state["jd_id"] = jd_id
-
-    work_dir_fallback = None
+    cv_id = str(uuid.uuid4())
+    work_dir = Path(pages_root) / cv_id
     try:
-        final_state = parser_agent.invoke(initial_state)
-        work_dir_fallback = final_state.get("work_dir")
-        return {
-            "id": final_state["cv_id"],
-            "data": final_state["extracted_data"],
-        }
+        cv_text = extract_text_from_pdf(pdf_path, str(work_dir))
+        data = extract_cv_details(cv_text, cv_id, jd_id)
+        return {"id": cv_id, "data": data}
     finally:
-        if work_dir_fallback:
-            p = Path(work_dir_fallback)
-            if p.exists():
-                shutil.rmtree(p, ignore_errors=True)
+        if work_dir.exists():
+            shutil.rmtree(work_dir, ignore_errors=True)
 
 
 if __name__ == "__main__":
-    import sys
-    pdf_path = sys.argv[1] if len(sys.argv) > 1 else "faiz.pdf"
-    result = process_cv(pdf_path)
+    result = process_cv("faiz.pdf")
     print(result)
