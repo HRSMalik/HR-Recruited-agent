@@ -18,6 +18,7 @@ import uuid
 from datetime import date, datetime, timezone
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
+from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
 from pymongo import MongoClient
@@ -58,12 +59,22 @@ _GOOGLE_TOKEN_PATH = ".credentials/google_token.json"
 _FILE_ID_RE = re.compile(r"[?&]id=([a-zA-Z0-9_-]+)|/d/([a-zA-Z0-9_-]+)")
 
 
+def _authorize_or_raise(reason: str):
+    """Run the OAuth flow if we have a TTY; otherwise raise a clear error."""
+    if sys.stdin.isatty():
+        print(f"{reason}; launching authorization flow...", file=sys.stderr)
+        authorize()
+    else:
+        raise RuntimeError(
+            f"{reason}. Run `python parser_agent.py auth` in a terminal to authorize, "
+            f"then restart the server."
+        )
+
+
 def _load_google_credentials() -> Credentials:
     if not os.path.exists(_GOOGLE_TOKEN_PATH):
-        raise RuntimeError(
-            f"Missing {_GOOGLE_TOKEN_PATH}. Run `python download_drive.py` once interactively "
-            f"to authorize with Sheets + Drive scopes."
-        )
+        _authorize_or_raise(reason=f"No token at {_GOOGLE_TOKEN_PATH}")
+
     creds = Credentials.from_authorized_user_file(_GOOGLE_TOKEN_PATH, _GOOGLE_SCOPES)
     if not creds.valid:
         if creds.expired and creds.refresh_token:
@@ -71,11 +82,39 @@ def _load_google_credentials() -> Credentials:
             with open(_GOOGLE_TOKEN_PATH, "w") as f:
                 f.write(creds.to_json())
         else:
-            raise RuntimeError(
-                f"Stored token at {_GOOGLE_TOKEN_PATH} is invalid and cannot be refreshed. "
-                f"Re-run `python download_drive.py` to re-authorize."
-            )
+            _authorize_or_raise(reason=f"Token at {_GOOGLE_TOKEN_PATH} is invalid and cannot be refreshed")
+            creds = Credentials.from_authorized_user_file(_GOOGLE_TOKEN_PATH, _GOOGLE_SCOPES)
     return creds
+
+
+def authorize():
+    """Run the OAuth flow once and save a token with Drive + Sheets scopes.
+
+    Idempotent: re-running with a valid token of the right scopes is a no-op.
+    If the existing token has different scopes, it's deleted and re-created
+    so the user re-consents to the new scope set.
+    """
+    if not os.path.exists(_GOOGLE_CREDS_PATH):
+        raise FileNotFoundError(
+            f"Missing {_GOOGLE_CREDS_PATH}. Download an OAuth client JSON from "
+            f"Google Cloud Console > APIs & Services > Credentials and place it there."
+        )
+
+    if os.path.exists(_GOOGLE_TOKEN_PATH):
+        existing = Credentials.from_authorized_user_file(_GOOGLE_TOKEN_PATH, _GOOGLE_SCOPES)
+        if set(existing.scopes or []) != set(_GOOGLE_SCOPES):
+            print("Existing token has different scopes; re-authorizing...")
+            os.remove(_GOOGLE_TOKEN_PATH)
+        else:
+            print(f"Token already at {_GOOGLE_TOKEN_PATH} with correct scopes. Nothing to do.")
+            return
+
+    flow = InstalledAppFlow.from_client_secrets_file(_GOOGLE_CREDS_PATH, _GOOGLE_SCOPES)
+    creds = flow.run_local_server(port=0)
+    os.makedirs(os.path.dirname(_GOOGLE_TOKEN_PATH), exist_ok=True)
+    with open(_GOOGLE_TOKEN_PATH, "w") as f:
+        f.write(creds.to_json())
+    print(f"Saved token to {_GOOGLE_TOKEN_PATH}")
 
 
 def _read_sheet_rows(sheets_service, spreadsheet_id: str, sheet_name: str) -> List[dict]:
@@ -321,7 +360,10 @@ def ingest_new_applicants() -> dict:
 
 if __name__ == "__main__":
     import sys as _sys
-    if len(_sys.argv) > 1 and _sys.argv[1] == "ingest":
+    cmd = _sys.argv[1] if len(_sys.argv) > 1 else ""
+    if cmd == "auth":
+        authorize()
+    elif cmd == "ingest":
         print(ingest_new_applicants(), file=_sys.stderr)
     else:
         result = process_cv("faiz.pdf")
