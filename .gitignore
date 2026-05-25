@@ -39,3 +39,4 @@ extracted_data/
 *.sqlite-wal
 
 .claude/
+.credentials/
