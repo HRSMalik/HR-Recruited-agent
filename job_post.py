@@ -110,7 +110,6 @@ class JobPostState(TypedDict):
     human_feedback: Optional[Dict[str, Any]]
     approved: bool
     linkedin_posted: bool
-    thread_id: Optional[str]
 
 
 def _append_google_form_link(content: str, thread_id: Optional[str] = None) -> str:
@@ -205,6 +204,20 @@ def regenerate_node(state):
         "generated_post": response.content
     }
 
+# def format_node(state):
+
+#     if state["human_feedback"]["action"] == "edit":
+
+#         final_post = state["human_feedback"]["edited_post"]
+
+#     else:
+#         final_post = state["generated_post"]
+
+#     return {
+#         **state,
+#         "approved": True,
+#         "generated_post": final_post
+#     }
 
 def format_node(state):
     action = (state.get("human_feedback") or {}).get("action")
@@ -251,6 +264,7 @@ def format_node(state):
 
     result = llm.invoke(prompt)
     formatted = (result.content or "").strip()
+    # print("Formatted post:", formatted, file=sys.stderr)
     return {
         **state,
         "generated_post": formatted,
@@ -296,7 +310,7 @@ def review_router(state):
 
     elif action == "regenerate":
         return "regenerate"
-
+    
 
 def post_to_linkedin_node(state: dict, config: dict) -> dict:
     content = state.get("generated_post")
@@ -411,7 +425,7 @@ if __name__ == "__main__":
     config = {
             "configurable": {"thread_id": thread_id}
             }
-
+    
     agent = create_workflow_agent()
 
     initial_input = {
@@ -432,6 +446,7 @@ if __name__ == "__main__":
             config=config
         )
 
+        # INTERRUPT DETECTED
         if "__interrupt__" in response:
 
             interrupts = response["__interrupt__"]
@@ -452,8 +467,13 @@ if __name__ == "__main__":
 
             continue
 
+        # WORKFLOW FINISHED
         break
 
 
     print("\nFINAL JOB POST:\n")
     print(response["generated_post"])
+    # try:
+    #     print(agent.get_graph().draw_mermaid())
+    # except Exception as e:
+    #     print(f"Graph visualization not available: {e}")

@@ -13,6 +13,4 @@ playwright
 mcp[cli]==1.27.0
 pymupdf
 pymongo
-google-api-python-client
-google-auth
 langgraph-checkpoint-sqlite==2.0.10
