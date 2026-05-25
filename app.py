@@ -1,4 +1,9 @@
+import asyncio
 import logging
+import os
+import sys
+from contextlib import asynccontextmanager
+
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import FastAPI, HTTPException, Header, File, UploadFile, status, Form, Query, Depends
 from fastapi.responses import Response, JSONResponse
@@ -10,12 +15,43 @@ from langgraph.errors import GraphInterrupt
 from langgraph.types import Command
 
 from job_post import create_workflow_agent
-from parser_agent import _get_candidates_collection
+from parser_agent import _get_candidates_collection, ingest_new_applicants
+from shortlisting_agent import shortlist_all_jobs
 
 
+async def _shortlist_loop(interval_seconds: int):
+    while True:
+        try:
+            await asyncio.sleep(interval_seconds)
+            print(f"[ingest] tick: running ingest_new_applicants", file=sys.stderr)
+            ingest_summary = await asyncio.to_thread(ingest_new_applicants)
+            print(f"[ingest] done: {ingest_summary}", file=sys.stderr)
+
+            print(f"[shortlist] tick: running shortlist_all_jobs", file=sys.stderr)
+            shortlist_summary = await asyncio.to_thread(shortlist_all_jobs)
+            print(f"[shortlist] done: {shortlist_summary}", file=sys.stderr)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:  # noqa: BLE001
+            print(f"[scheduler] error: {e!r}", file=sys.stderr)
 
 
-app = FastAPI(title="Recruitment Module API", version="1.0.0")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    interval = int(os.getenv("SHORTLIST_INTERVAL_SECONDS", "3600"))
+    task = asyncio.create_task(_shortlist_loop(interval))
+    print(f"[shortlist] scheduler started; interval={interval}s", file=sys.stderr)
+    try:
+        yield
+    finally:
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+
+app = FastAPI(title="Recruitment Module API", version="1.0.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
