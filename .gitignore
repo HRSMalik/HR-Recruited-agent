@@ -32,3 +32,10 @@ linkedin_storage_state.json
 extracted_data/
 
 *.pdf
+
+#sqlite
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+
+.claude/

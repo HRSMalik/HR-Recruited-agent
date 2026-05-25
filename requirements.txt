@@ -13,3 +13,4 @@ playwright
 mcp[cli]==1.27.0
 pymupdf
 pymongo
+langgraph-checkpoint-sqlite==2.0.10
