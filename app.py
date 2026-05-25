@@ -45,6 +45,7 @@ async def create_job_post(job_post: JobPostAgentRequest):
         "human_feedback": None,
         "approved": False,
         "linkedin_posted": False,
+        "thread_id": thread_id,
     }
 
     try:

@@ -13,8 +13,21 @@ import concurrent.futures
 import sys
 import os
 import sqlite3
+from pymongo import MongoClient
 from dotenv import load_dotenv
 load_dotenv()
+
+
+_JD_COLLECTION = None
+
+
+def _get_jd_collection():
+    global _JD_COLLECTION
+    if _JD_COLLECTION is None:
+        uri = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
+        db_name = os.getenv("MONGODB_DB", "recruitment-module")
+        _JD_COLLECTION = MongoClient(uri)[db_name]["jobdescriptions"]
+    return _JD_COLLECTION
 
 
 
@@ -95,16 +108,23 @@ class JobPostState(TypedDict):
     human_feedback: Optional[Dict[str, Any]]
     approved: bool
     linkedin_posted: bool
+    thread_id: Optional[str]
 
 
-def _append_google_form_link(content: str) -> str:
-    url = (os.getenv("GOOGLE_FORM_URL") or "").strip()
-    if not url:
+def _append_google_form_link(content: str, thread_id: Optional[str] = None) -> str:
+    base = (os.getenv("GOOGLE_FORM_URL") or "").strip()
+    if not base:
         raise ValueError(
             "Missing GOOGLE_FORM_URL. Set GOOGLE_FORM_URL to your Google Form link so applicants can apply."
         )
 
-    # Avoid double-appending if the content already includes the URL.
+    entry_id = (os.getenv("GOOGLE_FORM_THREAD_ENTRY_ID") or "").strip()
+    if entry_id and thread_id:
+        sep = "&" if "?" in base else "?"
+        url = f"{base}{sep}usp=pp_url&{entry_id}={thread_id}"
+    else:
+        url = base
+
     if url in content:
         return content
 
@@ -286,12 +306,24 @@ def review_router(state):
         return "regenerate"
     
 
+def persist_jd_node(state: dict) -> dict:
+    jd = (state.get("generated_post") or "").strip()
+    thread_id = state.get("thread_id")
+    if jd and thread_id:
+        _get_jd_collection().replace_one(
+            {"threadid": thread_id},
+            {"jd": jd, "threadid": thread_id},
+            upsert=True,
+        )
+    return state
+
+
 def post_to_linkedin_node(state: dict) -> dict:
     content = state.get("generated_post")
     if not content or not str(content).strip():
         raise ValueError("Missing 'generated_post' in workflow state; nothing to post.")
 
-    final_content = _append_google_form_link(str(content))
+    final_content = _append_google_form_link(str(content), state.get("thread_id"))
     print("Posting to linkedin with google form link appended", file=sys.stderr)
     state = {**state, "approved": True}
 
@@ -314,6 +346,7 @@ def create_workflow_agent():
     workflow.add_node("human_review", human_review)
     workflow.add_node("regenerate_post", regenerate_node)
     workflow.add_node("format_post", format_node)
+    workflow.add_node("persist_jd", persist_jd_node)
     workflow.add_node("post_to_linkedin", post_to_linkedin_node)
 
     workflow.set_entry_point("generate_job_post")
@@ -324,19 +357,20 @@ def create_workflow_agent():
         format_router,
         {
             "review": "human_review",
-            "post": "post_to_linkedin",
+            "post": "persist_jd",
         },
     )
     workflow.add_conditional_edges(
         "human_review",
         review_router,
         {
-            "post": "post_to_linkedin",
+            "post": "persist_jd",
             "format": "format_post",
             "regenerate": "regenerate_post",
         }
     )
     workflow.add_edge("regenerate_post", "format_post")
+    workflow.add_edge("persist_jd", "post_to_linkedin")
     workflow.add_edge("post_to_linkedin", END)
 
     graph = workflow.compile(checkpointer=memory)

@@ -32,3 +32,5 @@ linkedin_storage_state.json
 extracted_data/
 pdf_pages/
 job_post_checkpoints.sqlite
+service_account.json
+sync_temp/

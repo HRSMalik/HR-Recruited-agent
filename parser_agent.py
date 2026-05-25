@@ -41,6 +41,7 @@ class ParserAgentState(TypedDict, total=False):
     extracted_data: Dict[str, Any]
     form_experience_str: str
     llm_experience_years: float
+    job_thread_id: str
     saved: bool
 
 
@@ -222,25 +223,46 @@ def extract_fields_node(state: ParserAgentState) -> ParserAgentState:
     return {**state, "extracted_data": data}
 
 
+_CANONICAL_SHEET_HEADERS = ["Timestamp", "Name", "Email", "Experience", "Resume", "Job Reference Code", "Extra"]
+
+
+def _read_sheet_rows(csv_text: str) -> list[dict]:
+    reader = csv.reader(StringIO(csv_text))
+    rows = list(reader)
+    if not rows:
+        return []
+    raw_headers = rows[0]
+    if all((h or "").lower().startswith("column ") for h in raw_headers if h):
+        headers = _CANONICAL_SHEET_HEADERS[: len(raw_headers)]
+    else:
+        headers = raw_headers
+    return [dict(zip(headers, r + [""] * (len(headers) - len(r)))) for r in rows[1:]]
+
+
 def fetch_form_response_node(state: ParserAgentState) -> ParserAgentState:
     sheet_id = os.getenv("GOOGLE_SHEET_ID")
     email = ((state.get("extracted_data") or {}).get("email") or "").strip().lower()
     if not sheet_id or not email:
-        return {**state, "form_experience_str": ""}
+        return {**state, "form_experience_str": "", "job_thread_id": ""}
 
     url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv"
     try:
         resp = requests.get(url, timeout=30)
         resp.raise_for_status()
     except Exception:
-        return {**state, "form_experience_str": ""}
+        return {**state, "form_experience_str": "", "job_thread_id": ""}
 
-    reader = csv.DictReader(StringIO(resp.text))
-    for row in reader:
+    thread_col_env = os.getenv("GOOGLE_SHEET_THREAD_COLUMN")
+    for row in _read_sheet_rows(resp.text):
         if (row.get("Email") or "").strip().lower() == email:
-            return {**state, "form_experience_str": (row.get("Experience") or "").strip()}
+            thread_id = (row.get("Job Reference Code") or row.get(thread_col_env or "") or "").strip()
+            return {
+                **state,
+                "form_experience_str": (row.get("Experience") or "").strip(),
+                "job_thread_id": thread_id,
+            }
 
-    return {**state, "form_experience_str": ""}
+    return {**state, "form_experience_str": "", "job_thread_id": ""}
 
 
 def relookup_experience_node(state: ParserAgentState) -> ParserAgentState:
@@ -302,7 +324,8 @@ def validate_experience_node(state: ParserAgentState) -> ParserAgentState:
 
 def persist_node(state: ParserAgentState) -> ParserAgentState:
     cv_id = state["cv_id"]
-    data = state["extracted_data"]
+    data = dict(state["extracted_data"])
+    data["job_thread_id"] = state.get("job_thread_id", "")
     _get_candidates_collection().replace_one(
         {"_id": cv_id},
         {**data, "_id": cv_id},
