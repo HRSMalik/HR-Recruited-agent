@@ -13,8 +13,22 @@ import concurrent.futures
 import sys
 import os
 import sqlite3
+from pymongo import MongoClient
 from dotenv import load_dotenv
 load_dotenv()
+
+
+_JOB_DESCRIPTIONS_COLLECTION = None
+
+
+def _get_job_descriptions_collection():
+    """Lazily build and cache the MongoDB `job_descriptions` collection handle."""
+    global _JOB_DESCRIPTIONS_COLLECTION
+    if _JOB_DESCRIPTIONS_COLLECTION is None:
+        uri = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
+        db_name = os.getenv("MONGODB_DB", "recruitment-module")
+        _JOB_DESCRIPTIONS_COLLECTION = MongoClient(uri)[db_name]["job_descriptions"]
+    return _JOB_DESCRIPTIONS_COLLECTION
 
 
 
@@ -80,10 +94,11 @@ def _build_checkpointer():
         from langgraph.checkpoint.sqlite import SqliteSaver  # type: ignore
 
         conn = sqlite3.connect(db_path, check_same_thread=False)
-        return SqliteSaver(conn)
-    except Exception:  # noqa: BLE001
-        # Fallback if this LangGraph install doesn't include SqliteSaver.
-        print("using in-memory saver.", file=sys.stderr)
+        saver = SqliteSaver(conn)
+        saver.setup()
+        return saver
+    except Exception as e:  # noqa: BLE001
+        print(f"using in-memory saver. SqliteSaver unavailable: {e!r}", file=sys.stderr)
         return InMemorySaver()
 
 
@@ -97,14 +112,25 @@ class JobPostState(TypedDict):
     linkedin_posted: bool
 
 
-def _append_google_form_link(content: str) -> str:
-    url = (os.getenv("GOOGLE_FORM_URL") or "").strip()
-    if not url:
+def _append_google_form_link(content: str, thread_id: Optional[str] = None) -> str:
+    base_url = (os.getenv("GOOGLE_FORM_URL") or "").strip()
+    if not base_url:
         raise ValueError(
             "Missing GOOGLE_FORM_URL. Set GOOGLE_FORM_URL to your Google Form link so applicants can apply."
         )
 
-    # Avoid double-appending if the content already includes the URL.
+    entry_id = (os.getenv("GOOGLE_FORM_JD_ENTRY_ID") or "").strip()
+    if entry_id and thread_id:
+        sep = "&" if "?" in base_url else "?"
+        url = f"{base_url}{sep}usp=pp_url&{entry_id}={thread_id}"
+    else:
+        url = base_url
+        if not entry_id:
+            print(
+                "WARNING: GOOGLE_FORM_JD_ENTRY_ID not set; form submissions won't be tagged with jd_id.",
+                file=sys.stderr,
+            )
+
     if url in content:
         return content
 
@@ -238,7 +264,7 @@ def format_node(state):
 
     result = llm.invoke(prompt)
     formatted = (result.content or "").strip()
-    print("Formatted post:", formatted, file=sys.stderr)
+    # print("Formatted post:", formatted, file=sys.stderr)
     return {
         **state,
         "generated_post": formatted,
@@ -286,13 +312,15 @@ def review_router(state):
         return "regenerate"
     
 
-def post_to_linkedin_node(state: dict) -> dict:
+def post_to_linkedin_node(state: dict, config: dict) -> dict:
     content = state.get("generated_post")
     if not content or not str(content).strip():
         raise ValueError("Missing 'generated_post' in workflow state; nothing to post.")
 
-    final_content = _append_google_form_link(str(content))
+    thread_id = (config.get("configurable") or {}).get("thread_id")
+    final_content = _append_google_form_link(str(content), thread_id)
     print("Posting to linkedin with google form link appended", file=sys.stderr)
+    print(final_content, file=sys.stderr)
     state = {**state, "approved": True}
 
     _run_coro_sync(
@@ -303,6 +331,12 @@ def post_to_linkedin_node(state: dict) -> dict:
                 "headless": False,
             },
         )
+    )
+
+    _get_job_descriptions_collection().replace_one(
+        {"_id": thread_id},
+        {"_id": thread_id, "job_description": final_content},
+        upsert=True,
     )
 
     return {**state, "generated_post": final_content, "linkedin_posted": True}
