@@ -85,6 +85,14 @@ def shortlist_for_jd(jd_id: str) -> List[dict]:
     if not candidates:
         return []
 
+    already_scored = {
+        d["_id"]
+        for d in _shortlist_results().find({"jd_id": jd_id}, {"_id": 1})
+    }
+    candidates = [c for c in candidates if c.get("_id") not in already_scored]
+    if not candidates:
+        return []
+
     results = []
     for candidate in candidates:
         cv_id = candidate.get("_id")
