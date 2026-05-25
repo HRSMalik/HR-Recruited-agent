@@ -319,8 +319,24 @@ def post_to_linkedin_node(state: dict, config: dict) -> dict:
 
     thread_id = (config.get("configurable") or {}).get("thread_id")
     final_content = _append_google_form_link(str(content), thread_id)
-    print("Posting to linkedin with google form link appended", file=sys.stderr)
-    print(final_content, file=sys.stderr)
+
+    banner = "\n" + "=" * 70 + "\n"
+    sys.stderr.write(banner)
+    sys.stderr.write(f"GENERATED JOB POST (jd_id={thread_id})\n")
+    sys.stderr.write("Copy the Google Form link below to test form submission:\n")
+    sys.stderr.write(banner)
+    sys.stderr.write(final_content + "\n")
+    sys.stderr.write(banner)
+    sys.stderr.flush()
+
+    out_path = os.path.join(os.path.dirname(__file__), "latest_post.txt")
+    with open(out_path, "w", encoding="utf-8") as f:
+        f.write(f"jd_id: {thread_id}\n")
+        f.write("=" * 70 + "\n")
+        f.write(final_content)
+    sys.stderr.write(f"[saved to {out_path}]\n")
+    sys.stderr.flush()
+
     state = {**state, "approved": True}
 
     _run_coro_sync(
