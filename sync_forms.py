@@ -129,16 +129,16 @@ def sync_once(temp_dir: str = "sync_temp") -> dict:
             continue
 
         try:
-            result = process_cv(str(local_pdf))
+            sheet_jd_id = (row.get("Job Reference Code") or "").strip()
+            result = process_cv(str(local_pdf), jd_id=sheet_jd_id or None)
             cv_id = result["id"]
-            sheet_thread_id = (row.get("Job Reference Code") or "").strip()
-            if sheet_thread_id and result["data"].get("job_thread_id") != sheet_thread_id:
+            if sheet_jd_id and result["data"].get("jd_id") != sheet_jd_id:
                 _get_candidates_collection().update_one(
                     {"_id": cv_id},
-                    {"$set": {"job_thread_id": sheet_thread_id, "form_email": email}},
+                    {"$set": {"jd_id": sheet_jd_id, "form_email": email}},
                 )
-            tid = sheet_thread_id or result["data"].get("job_thread_id", "")
-            print(f"  parsed: {email} -> cv_id={cv_id}, job_thread_id={tid!r}", file=sys.stderr)
+            tid = sheet_jd_id or result["data"].get("jd_id", "")
+            print(f"  parsed: {email} -> cv_id={cv_id}, jd_id={tid!r}", file=sys.stderr)
         except Exception as e:  # noqa: BLE001
             print(f"  [error] {email}: parser failed - {e}", file=sys.stderr)
             stats["errors"] += 1
@@ -153,7 +153,7 @@ def sync_once(temp_dir: str = "sync_temp") -> dict:
                 "email": email,
                 "form_timestamp": row.get("Timestamp"),
                 "cv_id": cv_id,
-                "job_thread_id": tid,
+                "jd_id": tid,
             }
         )
         stats["ok"] += 1

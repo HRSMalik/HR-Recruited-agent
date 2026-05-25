@@ -1,6 +1,6 @@
 from langchain.chat_models import init_chat_model
 from langgraph.graph import StateGraph, END
-from typing import TypedDict, List, Dict, Any
+from typing import TypedDict, List, Dict, Any, Optional
 import fitz  # PyMuPDF
 from pathlib import Path
 import base64
@@ -41,7 +41,7 @@ class ParserAgentState(TypedDict, total=False):
     extracted_data: Dict[str, Any]
     form_experience_str: str
     llm_experience_years: float
-    job_thread_id: str
+    jd_id: str
     saved: bool
 
 
@@ -243,26 +243,26 @@ def fetch_form_response_node(state: ParserAgentState) -> ParserAgentState:
     sheet_id = os.getenv("GOOGLE_SHEET_ID")
     email = ((state.get("extracted_data") or {}).get("email") or "").strip().lower()
     if not sheet_id or not email:
-        return {**state, "form_experience_str": "", "job_thread_id": ""}
+        return {**state, "form_experience_str": "", "jd_id": ""}
 
     url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv"
     try:
         resp = requests.get(url, timeout=30)
         resp.raise_for_status()
     except Exception:
-        return {**state, "form_experience_str": "", "job_thread_id": ""}
+        return {**state, "form_experience_str": "", "jd_id": ""}
 
     thread_col_env = os.getenv("GOOGLE_SHEET_THREAD_COLUMN")
     for row in _read_sheet_rows(resp.text):
         if (row.get("Email") or "").strip().lower() == email:
-            thread_id = (row.get("Job Reference Code") or row.get(thread_col_env or "") or "").strip()
+            jd_id = (row.get("Job Reference Code") or row.get(thread_col_env or "") or "").strip()
             return {
                 **state,
                 "form_experience_str": (row.get("Experience") or "").strip(),
-                "job_thread_id": thread_id,
+                "jd_id": jd_id,
             }
 
-    return {**state, "form_experience_str": "", "job_thread_id": ""}
+    return {**state, "form_experience_str": "", "jd_id": ""}
 
 
 def relookup_experience_node(state: ParserAgentState) -> ParserAgentState:
@@ -325,7 +325,7 @@ def validate_experience_node(state: ParserAgentState) -> ParserAgentState:
 def persist_node(state: ParserAgentState) -> ParserAgentState:
     cv_id = state["cv_id"]
     data = dict(state["extracted_data"])
-    data["job_thread_id"] = state.get("job_thread_id", "")
+    data["jd_id"] = state.get("jd_id", "")
     _get_candidates_collection().replace_one(
         {"_id": cv_id},
         {**data, "_id": cv_id},
@@ -371,11 +371,14 @@ def create_parser_agent():
 parser_agent = create_parser_agent()
 
 
-def process_cv(pdf_path: str, pages_root: str = "pdf_pages") -> dict:
+def process_cv(pdf_path: str, jd_id: Optional[str] = None, pages_root: str = "pdf_pages") -> dict:
     initial_state: ParserAgentState = {
         "pdf_path": pdf_path,
         "pages_root": pages_root,
     }
+    if jd_id:
+        initial_state["jd_id"] = jd_id
+
     work_dir_fallback = None
     try:
         final_state = parser_agent.invoke(initial_state)

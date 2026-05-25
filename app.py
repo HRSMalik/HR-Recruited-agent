@@ -3,13 +3,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi import FastAPI, HTTPException, Header, File, UploadFile, status, Form, Query, Depends
 from fastapi.responses import Response, JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from schemas import JobPostAgentRequest, HumanFeedback, JobPostAgentResult
+from schemas import JobPostAgentRequest, HumanFeedback, JobPostAgentResult, CandidateListResponse
 import uuid
 
 from langgraph.errors import GraphInterrupt
 from langgraph.types import Command
 
 from job_post import create_workflow_agent
+from parser_agent import _get_candidates_collection
 
 
 
@@ -161,6 +162,19 @@ async def review_job_post(thread_id: str, human_feedback: HumanFeedback):
 
 
 
+
+
+@app.get("/candidates", tags=["Candidates"], response_model=CandidateListResponse)
+async def list_candidates(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(10, ge=1, le=100),
+):
+    collection = _get_candidates_collection()
+    total = collection.count_documents({})
+    docs = list(collection.find().skip(skip).limit(limit))
+    for doc in docs:
+        doc["_id"] = str(doc["_id"])
+    return {"items": docs, "total": total, "skip": skip, "limit": limit}
 
 
 @app.get("/health", tags=["Health Check"])

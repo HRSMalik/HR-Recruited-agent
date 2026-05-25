@@ -30,7 +30,19 @@ Thumbs.db
 __pycache__/
 linkedin_storage_state.json
 extracted_data/
+
+# Drive sync + workflow artifacts
 pdf_pages/
 job_post_checkpoints.sqlite
 service_account.json
 sync_temp/
+
+# PDFs
+*.pdf
+
+# SQLite
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+
+.claude/

@@ -18,16 +18,17 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-_JD_COLLECTION = None
+_JOB_DESCRIPTIONS_COLLECTION = None
 
 
-def _get_jd_collection():
-    global _JD_COLLECTION
-    if _JD_COLLECTION is None:
+def _get_job_descriptions_collection():
+    """Lazily build and cache the MongoDB `job_descriptions` collection handle."""
+    global _JOB_DESCRIPTIONS_COLLECTION
+    if _JOB_DESCRIPTIONS_COLLECTION is None:
         uri = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
         db_name = os.getenv("MONGODB_DB", "recruitment-module")
-        _JD_COLLECTION = MongoClient(uri)[db_name]["jobdescriptions"]
-    return _JD_COLLECTION
+        _JOB_DESCRIPTIONS_COLLECTION = MongoClient(uri)[db_name]["job_descriptions"]
+    return _JOB_DESCRIPTIONS_COLLECTION
 
 
 
@@ -93,10 +94,11 @@ def _build_checkpointer():
         from langgraph.checkpoint.sqlite import SqliteSaver  # type: ignore
 
         conn = sqlite3.connect(db_path, check_same_thread=False)
-        return SqliteSaver(conn)
-    except Exception:  # noqa: BLE001
-        # Fallback if this LangGraph install doesn't include SqliteSaver.
-        print("using in-memory saver.", file=sys.stderr)
+        saver = SqliteSaver(conn)
+        saver.setup()
+        return saver
+    except Exception as e:  # noqa: BLE001
+        print(f"using in-memory saver. SqliteSaver unavailable: {e!r}", file=sys.stderr)
         return InMemorySaver()
 
 
@@ -112,18 +114,23 @@ class JobPostState(TypedDict):
 
 
 def _append_google_form_link(content: str, thread_id: Optional[str] = None) -> str:
-    base = (os.getenv("GOOGLE_FORM_URL") or "").strip()
-    if not base:
+    base_url = (os.getenv("GOOGLE_FORM_URL") or "").strip()
+    if not base_url:
         raise ValueError(
             "Missing GOOGLE_FORM_URL. Set GOOGLE_FORM_URL to your Google Form link so applicants can apply."
         )
 
-    entry_id = (os.getenv("GOOGLE_FORM_THREAD_ENTRY_ID") or "").strip()
+    entry_id = (os.getenv("GOOGLE_FORM_JD_ENTRY_ID") or "").strip()
     if entry_id and thread_id:
-        sep = "&" if "?" in base else "?"
-        url = f"{base}{sep}usp=pp_url&{entry_id}={thread_id}"
+        sep = "&" if "?" in base_url else "?"
+        url = f"{base_url}{sep}usp=pp_url&{entry_id}={thread_id}"
     else:
-        url = base
+        url = base_url
+        if not entry_id:
+            print(
+                "WARNING: GOOGLE_FORM_JD_ENTRY_ID not set; form submissions won't be tagged with jd_id.",
+                file=sys.stderr,
+            )
 
     if url in content:
         return content
@@ -198,20 +205,6 @@ def regenerate_node(state):
         "generated_post": response.content
     }
 
-# def format_node(state):
-
-#     if state["human_feedback"]["action"] == "edit":
-
-#         final_post = state["human_feedback"]["edited_post"]
-
-#     else:
-#         final_post = state["generated_post"]
-
-#     return {
-#         **state,
-#         "approved": True,
-#         "generated_post": final_post
-#     }
 
 def format_node(state):
     action = (state.get("human_feedback") or {}).get("action")
@@ -258,7 +251,6 @@ def format_node(state):
 
     result = llm.invoke(prompt)
     formatted = (result.content or "").strip()
-    print("Formatted post:", formatted, file=sys.stderr)
     return {
         **state,
         "generated_post": formatted,
@@ -304,27 +296,17 @@ def review_router(state):
 
     elif action == "regenerate":
         return "regenerate"
-    
-
-def persist_jd_node(state: dict) -> dict:
-    jd = (state.get("generated_post") or "").strip()
-    thread_id = state.get("thread_id")
-    if jd and thread_id:
-        _get_jd_collection().replace_one(
-            {"threadid": thread_id},
-            {"jd": jd, "threadid": thread_id},
-            upsert=True,
-        )
-    return state
 
 
-def post_to_linkedin_node(state: dict) -> dict:
+def post_to_linkedin_node(state: dict, config: dict) -> dict:
     content = state.get("generated_post")
     if not content or not str(content).strip():
         raise ValueError("Missing 'generated_post' in workflow state; nothing to post.")
 
-    final_content = _append_google_form_link(str(content), state.get("thread_id"))
+    thread_id = (config.get("configurable") or {}).get("thread_id")
+    final_content = _append_google_form_link(str(content), thread_id)
     print("Posting to linkedin with google form link appended", file=sys.stderr)
+    print(final_content, file=sys.stderr)
     state = {**state, "approved": True}
 
     _run_coro_sync(
@@ -337,6 +319,12 @@ def post_to_linkedin_node(state: dict) -> dict:
         )
     )
 
+    _get_job_descriptions_collection().replace_one(
+        {"_id": thread_id},
+        {"_id": thread_id, "job_description": final_content},
+        upsert=True,
+    )
+
     return {**state, "generated_post": final_content, "linkedin_posted": True}
 
 def create_workflow_agent():
@@ -346,7 +334,6 @@ def create_workflow_agent():
     workflow.add_node("human_review", human_review)
     workflow.add_node("regenerate_post", regenerate_node)
     workflow.add_node("format_post", format_node)
-    workflow.add_node("persist_jd", persist_jd_node)
     workflow.add_node("post_to_linkedin", post_to_linkedin_node)
 
     workflow.set_entry_point("generate_job_post")
@@ -357,20 +344,19 @@ def create_workflow_agent():
         format_router,
         {
             "review": "human_review",
-            "post": "persist_jd",
+            "post": "post_to_linkedin",
         },
     )
     workflow.add_conditional_edges(
         "human_review",
         review_router,
         {
-            "post": "persist_jd",
+            "post": "post_to_linkedin",
             "format": "format_post",
             "regenerate": "regenerate_post",
         }
     )
     workflow.add_edge("regenerate_post", "format_post")
-    workflow.add_edge("persist_jd", "post_to_linkedin")
     workflow.add_edge("post_to_linkedin", END)
 
     graph = workflow.compile(checkpointer=memory)
@@ -425,7 +411,7 @@ if __name__ == "__main__":
     config = {
             "configurable": {"thread_id": thread_id}
             }
-    
+
     agent = create_workflow_agent()
 
     initial_input = {
@@ -446,7 +432,6 @@ if __name__ == "__main__":
             config=config
         )
 
-        # INTERRUPT DETECTED
         if "__interrupt__" in response:
 
             interrupts = response["__interrupt__"]
@@ -467,13 +452,8 @@ if __name__ == "__main__":
 
             continue
 
-        # WORKFLOW FINISHED
         break
 
 
     print("\nFINAL JOB POST:\n")
     print(response["generated_post"])
-    # try:
-    #     print(agent.get_graph().draw_mermaid())
-    # except Exception as e:
-    #     print(f"Graph visualization not available: {e}")
