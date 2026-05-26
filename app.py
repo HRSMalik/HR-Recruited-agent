@@ -205,8 +205,28 @@ async def list_candidates(
     limit: int = Query(10, ge=1, le=100),
 ):
     collection = _get_candidates_collection()
-    total = collection.count_documents({})
-    docs = list(collection.find().skip(skip).limit(limit))
+    query = {"fit_percent": {"$exists": False}}
+    total = collection.count_documents(query)
+    docs = list(collection.find(query).skip(skip).limit(limit))
+    for doc in docs:
+        doc["_id"] = str(doc["_id"])
+    return {"items": docs, "total": total, "skip": skip, "limit": limit}
+
+
+@app.get("/shortlisted-candidates", tags=["Candidates"], response_model=CandidateListResponse)
+async def list_shortlisted_candidates(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(10, ge=1, le=100),
+):
+    collection = _get_candidates_collection()
+    query = {"fit_percent": {"$exists": True}}
+    total = collection.count_documents(query)
+    docs = list(
+        collection.find(query, {"name": 1, "fit_percent": 1, "jd_id": 1})
+        .sort("fit_percent", -1)
+        .skip(skip)
+        .limit(limit)
+    )
     for doc in docs:
         doc["_id"] = str(doc["_id"])
     return {"items": docs, "total": total, "skip": skip, "limit": limit}
