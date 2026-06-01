@@ -41,3 +41,17 @@ extracted_data/
 .claude/
 .credentials/
 latest_post.txt
+
+# Temp OCR output
+pdf_pages/
+
+# Debug scripts (one-off helpers)
+_check_mongo.py
+_verify_sheet.py
+_wait_for_candidate.py
+
+# Evaluation result outputs (regenerated each run)
+evaluation/results_*.json
+evaluation/*.pdf
+ragasev/results_*.json
+ragasev/*.pdf

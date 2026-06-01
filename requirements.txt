@@ -16,3 +16,5 @@ pymongo
 langgraph-checkpoint-sqlite==2.0.10
 google-auth-oauthlib
 google-api-python-client
+ragas==0.2.15
+datasets

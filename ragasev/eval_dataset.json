@@ -1,0 +1,231 @@
+{
+  "description": "End-to-end eval dataset: one Senior AI Engineer JD, 10 CVs, ground truth + uniform expected band [50, 100].",
+  "current_date_assumption": "2026-05-25",
+
+  "job_form": {
+    "title": "Senior AI Engineer",
+    "experience_level": "Senior",
+    "description": "We are looking for a seasoned Senior AI Engineer to lead our AI/ML initiatives. You will design and deploy production-grade AI systems, mentor junior engineers, and own the architecture for LLM-powered products. You will collaborate with cross-functional teams to translate business goals into scalable AI solutions and drive technical decisions across the AI stack.",
+    "requirements": "5+ years of experience in AI/ML engineering, deep expertise in LLMs (fine-tuning, RAG, prompt engineering), strong MLOps and system design skills, production deployment on AWS/GCP, experience mentoring engineers, proficiency in Python and modern ML frameworks (PyTorch, TensorFlow)"
+  },
+
+  "post_agent_eval_criteria": [
+    {
+      "name": "covers_all_requirements",
+      "definition": "Does the post mention all the key requirements from the input form: 5+ years experience, LLM fine-tuning/RAG/prompt engineering, MLOps and system design, production AWS/GCP deployment, mentoring, Python and ML frameworks?"
+    },
+    {
+      "name": "professional_tone",
+      "definition": "Is the tone professional, recruiter-appropriate, and free of casual or unprofessional language?"
+    },
+    {
+      "name": "has_clear_cta",
+      "definition": "Does the post include a clear call to action telling the candidate how to apply (e.g., 'Fill the form to apply' link or contact info)?"
+    },
+    {
+      "name": "appropriate_length",
+      "definition": "Is the post a reasonable LinkedIn length (not too short like 3 lines, not extremely long beyond ~600 words)?"
+    }
+  ],
+
+  "cvs": [
+    {
+      "id": "cv_a",
+      "file": "../../data/a.pdf",
+      "ground_truth": {
+        "name": "Muhammad Anas",
+        "phone": "+923158980769",
+        "email": "muhammadanas1032@gmail.com",
+        "last_education_institution": "The Islamia University of Bahawalpur",
+        "last_education_degree": "BS Artificial Intelligence",
+        "experience_years_approx": 3.1,
+        "experience_years_tolerance": 0.5,
+        "freelance_experience_years_approx": 0.0
+      },
+      "expected_score_band": {
+        "min": 50,
+        "max": 100,
+        "rationale": "AI/ML Engineer with LLM/RAG hands-on, 3.1y experience."
+      }
+    },
+    {
+      "id": "cv_b",
+      "file": "../../data/b.pdf",
+      "ground_truth": {
+        "name": "Shaharyar Sajid",
+        "phone": "+923005213313",
+        "email": "shaharyarsajid@gmail.com",
+        "last_education_institution": "PIEAS",
+        "last_education_degree": "BS Computer Science",
+        "experience_years_approx": 3.3,
+        "experience_years_tolerance": 0.5,
+        "freelance_experience_years_approx": 0.0
+      },
+      "expected_score_band": {
+        "min": 50,
+        "max": 100,
+        "rationale": "Junior Data Scientist 3.3y, ML/forecasting focus."
+      }
+    },
+    {
+      "id": "cv_c",
+      "file": "../../data/c.pdf",
+      "ground_truth": {
+        "name": "Amna Anwar",
+        "phone": "03144216078",
+        "email": "amnaanwarofficial@gmail.com",
+        "last_education_institution": "University of Management and Technology, Lahore",
+        "last_education_degree": "MS Artificial Intelligence",
+        "experience_years_approx": 3.0,
+        "experience_years_tolerance": 0.5,
+        "freelance_experience_years_approx": 0.0
+      },
+      "expected_score_band": {
+        "min": 50,
+        "max": 100,
+        "rationale": "AI Engineer with MS AI, 3+ years (Contegris + Systems Limited), strong GenAI/RAG/LLM work."
+      }
+    },
+    {
+      "id": "cv_d",
+      "file": "../../data/d.pdf",
+      "ground_truth": {
+        "name": "Muhammad Abbas Raza",
+        "phone": "+923101396765",
+        "email": "muhammadabbasrazamemon@gmail.com",
+        "last_education_institution": "Sukkur IBA University",
+        "last_education_degree": "Bachelor of Science in Computer Science",
+        "experience_years_approx": 3.3,
+        "experience_years_tolerance": 0.5,
+        "freelance_experience_years_approx": 0.0
+      },
+      "expected_score_band": {
+        "min": 50,
+        "max": 100,
+        "rationale": "AI/ML Engineer, extensive RAG/LangChain/LLM/AWS production work."
+      }
+    },
+    {
+      "id": "cv_e",
+      "file": "../../data/e.pdf",
+      "ground_truth": {
+        "name": "Mirza Abdul Wadood Baig",
+        "phone": "+923204010860",
+        "email": "baigwadood@gmail.com",
+        "last_education_institution": "University of Engineering & Technology Lahore",
+        "last_education_degree": "BSc Electrical Engineering (Major in Computer Science)",
+        "experience_years_approx": 4.5,
+        "experience_years_tolerance": 0.7,
+        "freelance_experience_years_approx": 0.0
+      },
+      "expected_score_band": {
+        "min": 50,
+        "max": 100,
+        "rationale": "Senior Gen-AI Engineer with 4.5y including multi-agent/LangChain/RAG production deployments at Northbay."
+      }
+    },
+    {
+      "id": "cv_f",
+      "file": "../../data/f.pdf",
+      "ground_truth": {
+        "name": "Tayyba Hafeezullah",
+        "phone": "+923096604743",
+        "email": "tayybahafeez.2022@gmail.com",
+        "last_education_institution": "Virtual University of Pakistan",
+        "last_education_degree": "Master of Computer Science (MCS)",
+        "experience_years_approx": 3.3,
+        "experience_years_tolerance": 0.5,
+        "freelance_experience_years_approx": 0.0
+      },
+      "expected_score_band": {
+        "min": 50,
+        "max": 100,
+        "rationale": "Python Developer (AI/ML) 3.3y, YOLO/LLaMA/RAG production work."
+      }
+    },
+    {
+      "id": "cv_g",
+      "file": "../../data/g.pdf",
+      "ground_truth": {
+        "name": "Faaiz Hashmi",
+        "phone": "03432756598",
+        "email": "faaiz.azizp@gmail.com",
+        "last_education_institution": "UCP, Lahore",
+        "last_education_degree": "Bachelors in Computer Science",
+        "experience_years_approx": 4.5,
+        "experience_years_tolerance": 0.7,
+        "freelance_experience_years_approx": 2.0
+      },
+      "expected_score_band": {
+        "min": 50,
+        "max": 100,
+        "rationale": "AI/ML + Automation Engineer ~5y total including 2y freelance, LLM/RAG/PEFT work."
+      }
+    },
+    {
+      "id": "cv_h",
+      "file": "../../data/h.pdf",
+      "ground_truth": {
+        "name": "Daniyal Sheikh",
+        "phone": "+923472384363",
+        "email": "dsheikh8156@gmail.com",
+        "last_education_institution": "NUST",
+        "last_education_degree": "MS Artificial Intelligence and Autonomous Systems",
+        "experience_years_approx": 4.0,
+        "experience_years_tolerance": 0.5,
+        "freelance_experience_years_approx": 0.0
+      },
+      "expected_score_band": {
+        "min": 50,
+        "max": 100,
+        "rationale": "ML Engineer 4y at Motive + Vyro, MS AI from NUST, transformer/RAG/LangChain work."
+      }
+    },
+    {
+      "id": "cv_j",
+      "file": "../../data/j.pdf",
+      "ground_truth": {
+        "name": "Syed Anas Ali",
+        "phone": "+923363731622",
+        "email": "s.anas8497@gmail.com",
+        "last_education_institution": "Information Technology University",
+        "last_education_degree": "Bachelors of Science in Electrical Engineering",
+        "experience_years_approx": 2.9,
+        "experience_years_tolerance": 0.5,
+        "freelance_experience_years_approx": 0.0
+      },
+      "expected_score_band": {
+        "min": 50,
+        "max": 100,
+        "rationale": "AI Developer 2.9y with LLM/RAG/Azure work, BS EE from ITU."
+      }
+    },
+    {
+      "id": "cv_k",
+      "file": "../../data/k.pdf",
+      "ground_truth": {
+        "name": "Ali Ahmad",
+        "phone": "+923356492602",
+        "email": "aliahmaddawana@gmail.com",
+        "last_education_institution": "The Islamia University of Bahawalpur",
+        "last_education_degree": "BS Software Engineering",
+        "experience_years_approx": 2.5,
+        "experience_years_tolerance": 0.5,
+        "freelance_experience_years_approx": 0.0
+      },
+      "expected_score_band": {
+        "min": 50,
+        "max": 100,
+        "rationale": "Deep Learning Engineer (projects-based) 2.5y, CNN/LSTM/Transformer with MLOps."
+      }
+    }
+  ],
+
+  "shortlist_eval_rules": {
+    "score_should_be_integer": true,
+    "score_should_be_in_range_0_to_100": true,
+    "all_candidates_should_score_above": 40,
+    "stability_tolerance": 15,
+    "stability_runs": 3
+  }
+}
