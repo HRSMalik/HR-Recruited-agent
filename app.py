@@ -1,20 +1,57 @@
+import asyncio
 import logging
+import os
+import sys
+from contextlib import asynccontextmanager
+
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import FastAPI, HTTPException, Header, File, UploadFile, status, Form, Query, Depends
 from fastapi.responses import Response, JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from schemas import JobPostAgentRequest, HumanFeedback, JobPostAgentResult
+from schemas import JobPostAgentRequest, HumanFeedback, JobPostAgentResult, CandidateListResponse, JobListResponse
 import uuid
 
 from langgraph.errors import GraphInterrupt
 from langgraph.types import Command
 
-from job_post import create_workflow_agent
+from job_post import create_workflow_agent, _get_job_descriptions_collection
+from parser_agent import _get_candidates_collection, ingest_new_applicants
+from shortlisting_agent import shortlist_all_jobs
 
 
+async def _shortlist_loop(interval_seconds: int):
+    while True:
+        try:
+            await asyncio.sleep(interval_seconds)
+            print(f"[ingest] tick: running ingest_new_applicants", file=sys.stderr)
+            ingest_summary = await asyncio.to_thread(ingest_new_applicants)
+            print(f"[ingest] done: {ingest_summary}", file=sys.stderr)
+
+            print(f"[shortlist] tick: running shortlist_all_jobs", file=sys.stderr)
+            shortlist_summary = await asyncio.to_thread(shortlist_all_jobs)
+            print(f"[shortlist] done: {shortlist_summary}", file=sys.stderr)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:  # noqa: BLE001
+            print(f"[scheduler] error: {e!r}", file=sys.stderr)
 
 
-app = FastAPI(title="Recruitment Module API", version="1.0.0")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    interval = int(os.getenv("SHORTLIST_INTERVAL_SECONDS", "3600"))
+    task = asyncio.create_task(_shortlist_loop(interval))
+    print(f"[shortlist] scheduler started; interval={interval}s", file=sys.stderr)
+    try:
+        yield
+    finally:
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+
+app = FastAPI(title="Recruitment Module API", version="1.0.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -160,6 +197,52 @@ async def review_job_post(thread_id: str, human_feedback: HumanFeedback):
 
 
 
+
+
+@app.get("/candidates", tags=["Candidates"], response_model=CandidateListResponse)
+async def list_candidates(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(10, ge=1, le=100),
+):
+    collection = _get_candidates_collection()
+    query = {"fit_percent": {"$exists": False}}
+    total = collection.count_documents(query)
+    docs = list(collection.find(query).skip(skip).limit(limit))
+    for doc in docs:
+        doc["_id"] = str(doc["_id"])
+    return {"items": docs, "total": total, "skip": skip, "limit": limit}
+
+
+@app.get("/shortlisted-candidates", tags=["Candidates"], response_model=CandidateListResponse)
+async def list_shortlisted_candidates(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(10, ge=1, le=100),
+):
+    collection = _get_candidates_collection()
+    query = {"fit_percent": {"$exists": True}}
+    total = collection.count_documents(query)
+    docs = list(
+        collection.find(query, {"name": 1, "fit_percent": 1, "jd_id": 1})
+        .sort("fit_percent", -1)
+        .skip(skip)
+        .limit(limit)
+    )
+    for doc in docs:
+        doc["_id"] = str(doc["_id"])
+    return {"items": docs, "total": total, "skip": skip, "limit": limit}
+
+
+@app.get("/job-posts", tags=["Job Posts"], response_model=JobListResponse)
+async def list_job_posts(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(10, ge=1, le=100),
+):
+    collection = _get_job_descriptions_collection()
+    total = collection.count_documents({})
+    docs = list(collection.find().skip(skip).limit(limit))
+    for doc in docs:
+        doc["_id"] = str(doc["_id"])
+    return {"items": docs, "total": total, "skip": skip, "limit": limit}
 
 
 @app.get("/health", tags=["Health Check"])

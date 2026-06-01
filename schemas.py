@@ -1,5 +1,19 @@
 from pydantic import BaseModel, Field
-from typing import Optional, Any, Literal
+from typing import Optional, Any, Literal, List, Dict
+
+
+class CandidateListResponse(BaseModel):
+    items: List[Dict[str, Any]]
+    total: int
+    skip: int
+    limit: int
+
+
+class JobListResponse(BaseModel):
+    items: List[Dict[str, Any]]
+    total: int
+    skip: int
+    limit: int
 
 
 class JobPostAgentRequest(BaseModel):
