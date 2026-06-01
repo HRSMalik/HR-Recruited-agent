@@ -226,31 +226,96 @@ def extract_text_from_pdf(pdf_path: str, work_dir: str) -> str:
         return ""
     
 
+def _parse_role_date(s):
+    if not s:
+        return None
+    s = str(s).strip().lower()
+    if s in ("present", "current", "now", "ongoing", "today"):
+        return date.today()
+    m = re.match(r"^(\d{4})-(\d{1,2})", s)
+    if m:
+        year, month = int(m.group(1)), max(1, min(12, int(m.group(2))))
+        return date(year, month, 1)
+    m = re.match(r"^(\d{4})$", s)
+    if m:
+        return date(int(m.group(1)), 1, 1)
+    return None
+
+
+def _months_between(start, end):
+    """Months in the half-open interval [start, end). Standard CV-duration semantics."""
+    months = set()
+    if not start or not end or start >= end:
+        return months
+    y, m = start.year, start.month
+    while (y, m) < (end.year, end.month):
+        months.add((y, m))
+        m += 1
+        if m > 12:
+            m = 1
+            y += 1
+    return months
+
+
+def _compute_experience(roles):
+    """Given LLM-extracted role list, return (professional_years, freelance_years) as exact decimals."""
+    professional_months = set()
+    freelance_months = set()
+
+    if not isinstance(roles, list):
+        return 0.0, 0.0
+
+    for role in roles:
+        if not isinstance(role, dict):
+            continue
+        kind = (role.get("kind") or "professional").strip().lower()
+        start = _parse_role_date(role.get("start"))
+        end = _parse_role_date(role.get("end")) or date.today()
+        months = _months_between(start, end)
+        if not months:
+            continue
+        if kind == "internship":
+            continue
+        if kind == "freelance":
+            freelance_months |= months
+        else:
+            professional_months |= months
+
+    return (
+        round(len(professional_months) / 12, 2),
+        round(len(freelance_months) / 12, 2),
+    )
+
+
 def extract_cv_details(cv_text: str, cv_id: str, jd_id: Optional[str] = None) -> dict:
     prompt = f"""
     Extract the following information from the CV text.
 
-    Return ONLY valid JSON.
+    Return ONLY valid JSON with these fields:
+    - name (string)
+    - phone (string)
+    - email (string)
+    - last_education_institution (string)
+    - last_education_degree (string, e.g. "Bachelor's in Computer Science")
+    - roles (array): work history. Each entry must be an object with:
+        - kind: one of "professional", "freelance", "internship"
+        - start: "YYYY-MM" (or "YYYY" if only the year is given)
+        - end: "YYYY-MM", or "present" if the role is ongoing
+        - title: job title (string, optional)
+        - company: company name (string, optional)
 
-    Required fields:
-    - name
-    - phone
-    - email
-    - last_education_institution
-    - last_education_degree (e.g., "Bachelor's in Computer Science", "Master's in Data Science", etc.)
-    - experience_years (total years of relevant work experience)
-    - freelance_experience_years (total years of freelance experience, if any)(optional)
+    Classification rules for `kind`:
+    - "freelance" if the work was via Upwork, Fiverr, Toptal, Freelancer.com,
+      or the role is explicitly self-employed / contract / freelance.
+    - "internship" for internships, co-ops, apprenticeships, trainee programs.
+    - "professional" for everything else (full-time, part-time employment).
 
-    Rules:
-    - If a field is missing, return an empty string
-    - Do not include explanations
-    - Do not wrap JSON in markdown
-    - to get experience, count time from their jobs start date and end dates to get total number of year
-    - get the experience in exact years, if experience starts from mar 2018 and ends in jan 2020, then experience is 1.8 years and so on, if it mentions jun 2018 to present then todays date is {date.today()} count the experience accordingly.
-    - count freelance experience separately i.e. (upwork, fiverr, etc.)
-    - do not add freelance experience in experience_years field, it should be only in freelance_experience_years field
+    Output rules:
+    - If a string field is missing, return "".
+    - If no work history can be extracted, return roles: [].
+    - Do not include explanations.
+    - Do not wrap the JSON in markdown.
 
-    
     CV TEXT:
     {cv_text}
     """
@@ -260,7 +325,6 @@ def extract_cv_details(cv_text: str, cv_id: str, jd_id: Optional[str] = None) ->
 
     try:
         json_response = json.loads(response.content)
-        json_response["raw_cv_text"] = cv_text
     except Exception:
         json_response = {
             "name": "",
@@ -268,11 +332,13 @@ def extract_cv_details(cv_text: str, cv_id: str, jd_id: Optional[str] = None) ->
             "email": "",
             "last_education_institution": "",
             "last_education_degree": "",
-            "experience_years": "",
-            "freelance_experience_years": "",
-            "raw_cv_text": cv_text
+            "roles": [],
         }
 
+    prof_years, freelance_years = _compute_experience(json_response.get("roles") or [])
+    json_response["experience_years"] = prof_years
+    json_response["freelance_experience_years"] = freelance_years
+    json_response["raw_cv_text"] = cv_text
 
     _get_candidates_collection().replace_one(
         {"_id": cv_id},
@@ -366,5 +432,5 @@ if __name__ == "__main__":
     elif cmd == "ingest":
         print(ingest_new_applicants(), file=_sys.stderr)
     else:
-        result = process_cv("faiz.pdf")
+        result = process_cv("syedali.pdf")
         print(result)
