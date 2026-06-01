@@ -9,6 +9,13 @@ class CandidateListResponse(BaseModel):
     limit: int
 
 
+class JobListResponse(BaseModel):
+    items: List[Dict[str, Any]]
+    total: int
+    skip: int
+    limit: int
+
+
 class JobPostAgentRequest(BaseModel):
     title: str = Field(..., description="The title of the job post")
     experience_level: str = Field(..., description="The experience level required for the job post")

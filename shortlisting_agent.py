@@ -28,10 +28,6 @@ def _job_descriptions():
     return _get_db()["job_descriptions"]
 
 
-def _shortlist_results():
-    return _get_db()["shortlist_results"]
-
-
 def _score_candidate_against_jd(candidate: dict, jd_text: str) -> int:
     """Ask the LLM to score 0-100 how well the candidate fits the JD."""
     candidate_summary = {
@@ -69,10 +65,10 @@ def _score_candidate_against_jd(candidate: dict, jd_text: str) -> int:
 
 
 def shortlist_for_jd(jd_id: str) -> List[dict]:
-    """Score every candidate linked to `jd_id` against that job's description.
+    """Score every unscored candidate linked to `jd_id` against the JD.
 
-    Stores one document per (jd_id, cv_id) in `shortlist_results`. Returns the
-    list of results sorted by fit_percent descending.
+    Writes the score back to `candidates_info.fit_percent`. Returns the list
+    of newly-scored candidates sorted by fit_percent descending.
     """
     jd_doc = _job_descriptions().find_one({"_id": jd_id})
     if not jd_doc:
@@ -81,15 +77,9 @@ def shortlist_for_jd(jd_id: str) -> List[dict]:
     if not jd_text.strip():
         raise ValueError(f"job_description for jd_id={jd_id!r} is empty.")
 
-    candidates = list(_candidates().find({"jd_id": jd_id}))
-    if not candidates:
-        return []
-
-    already_scored = {
-        d["_id"]
-        for d in _shortlist_results().find({"jd_id": jd_id}, {"_id": 1})
-    }
-    candidates = [c for c in candidates if c.get("_id") not in already_scored]
+    candidates = list(_candidates().find(
+        {"jd_id": jd_id, "fit_percent": {"$exists": False}}
+    ))
     if not candidates:
         return []
 
@@ -97,13 +87,11 @@ def shortlist_for_jd(jd_id: str) -> List[dict]:
     for candidate in candidates:
         cv_id = candidate.get("_id")
         score = _score_candidate_against_jd(candidate, jd_text)
-        doc = {"_id": cv_id, "jd_id": jd_id, "fit_percent": score}
-        _shortlist_results().replace_one(
+        _candidates().update_one(
             {"_id": cv_id},
-            doc,
-            upsert=True,
+            {"$set": {"fit_percent": score}},
         )
-        results.append(doc)
+        results.append({"_id": cv_id, "jd_id": jd_id, "fit_percent": score})
 
     results.sort(key=lambda d: d["fit_percent"], reverse=True)
     return results
@@ -131,4 +119,4 @@ if __name__ == "__main__":
         print("Usage: python shortlisting_agent.py <jd_id>")
         sys.exit(1)
     for r in shortlist_for_jd(sys.argv[1]):
-        print(f"{r['fit_percent']:3d}%  cv_id={r['cv_id']}")
+        print(f"{r['fit_percent']:3d}%  cv_id={r['_id']}")
