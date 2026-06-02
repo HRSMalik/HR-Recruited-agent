@@ -17,6 +17,7 @@ import tempfile
 import uuid
 from datetime import date, datetime, timezone
 from google.oauth2.credentials import Credentials
+from google.auth.exceptions import RefreshError
 from google.auth.transport.requests import Request
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
@@ -78,9 +79,19 @@ def _load_google_credentials() -> Credentials:
     creds = Credentials.from_authorized_user_file(_GOOGLE_TOKEN_PATH, _GOOGLE_SCOPES)
     if not creds.valid:
         if creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-            with open(_GOOGLE_TOKEN_PATH, "w") as f:
-                f.write(creds.to_json())
+            try:
+                creds.refresh(Request())
+                with open(_GOOGLE_TOKEN_PATH, "w") as f:
+                    f.write(creds.to_json())
+            except RefreshError as e:
+                try:
+                    os.remove(_GOOGLE_TOKEN_PATH)
+                except OSError:
+                    pass
+                _authorize_or_raise(
+                    reason=f"Refresh token at {_GOOGLE_TOKEN_PATH} was revoked ({e})"
+                )
+                creds = Credentials.from_authorized_user_file(_GOOGLE_TOKEN_PATH, _GOOGLE_SCOPES)
         else:
             _authorize_or_raise(reason=f"Token at {_GOOGLE_TOKEN_PATH} is invalid and cannot be refreshed")
             creds = Credentials.from_authorized_user_file(_GOOGLE_TOKEN_PATH, _GOOGLE_SCOPES)
