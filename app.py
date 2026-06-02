@@ -17,6 +17,7 @@ from langgraph.types import Command
 from job_post import create_workflow_agent, _get_job_descriptions_collection
 from parser_agent import _get_candidates_collection, ingest_new_applicants
 from shortlisting_agent import shortlist_all_jobs
+from voice_agent import call_top_candidates, record_call_result
 
 
 async def _shortlist_loop(interval_seconds: int):
@@ -30,6 +31,10 @@ async def _shortlist_loop(interval_seconds: int):
             print(f"[shortlist] tick: running shortlist_all_jobs", file=sys.stderr)
             shortlist_summary = await asyncio.to_thread(shortlist_all_jobs)
             print(f"[shortlist] done: {shortlist_summary}", file=sys.stderr)
+
+            print(f"[voice] tick: running call_top_candidates", file=sys.stderr)
+            voice_summary = await asyncio.to_thread(call_top_candidates)
+            print(f"[voice] done: {voice_summary}", file=sys.stderr)
         except asyncio.CancelledError:
             raise
         except Exception as e:  # noqa: BLE001
@@ -243,6 +248,34 @@ async def list_job_posts(
     for doc in docs:
         doc["_id"] = str(doc["_id"])
     return {"items": docs, "total": total, "skip": skip, "limit": limit}
+
+
+@app.post("/voice/webhook", tags=["Voice"])
+async def voice_webhook(payload: dict):
+    """Receive end-of-call reports from Vapi. Persists transcript + summary
+    and scores the interview into `screened_candidates`."""
+    msg = payload.get("message") or {}
+    if msg.get("type") != "end-of-call-report":
+        return {"received": True, "ignored": True}
+
+    call = msg.get("call") or {}
+    call_id = call.get("id")
+    if not call_id:
+        return {"received": True, "error": "missing call_id"}
+
+    transcript = (
+        (msg.get("artifact") or {}).get("transcript")
+        or msg.get("transcript")
+        or ""
+    )
+    summary = (
+        (msg.get("analysis") or {}).get("summary")
+        or msg.get("summary")
+        or ""
+    )
+
+    await asyncio.to_thread(record_call_result, call_id, transcript, summary)
+    return {"received": True}
 
 
 @app.get("/health", tags=["Health Check"])

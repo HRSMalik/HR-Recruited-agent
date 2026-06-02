@@ -18,6 +18,18 @@ GOOGLE_SHEET_CV_COLUMN=
 
 SHORTLIST_INTERVAL_SECONDS=
 
+
+SHORTLIST_INTERVAL_SECONDS=30
+
+MONGODB_URI=""
+MONGODB_DB=""
+
+VAPI_API_KEY=
+VAPI_ASSISTANT_ID=
+VAPI_PHONE_NUMBER_ID=
+VAPI_DEFAULT_COUNTRY_CODE=
+
+
 after that enable google developer drive api from google console and place the credential.json file in a folder called .credentials
 
 finally run the app.py file like so "uvicorn app:app"
