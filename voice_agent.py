@@ -50,6 +50,80 @@ def _screened():
     return _get_db()["screened_candidates"]
 
 
+def _insights_collection():
+    return _get_db()["interview_insights"]
+
+
+def _meetings_collection():
+    return _get_db()["meetings"]
+
+
+def _jobs_collection():
+    return _get_db()["job_descriptions"]
+
+
+def list_screened_candidates(
+    skip: int = 0,
+    limit: int = 10,
+    status: Optional[str] = None,
+    min_score: Optional[int] = None,
+) -> dict:
+    """List screened candidates with optional filters, enriched with insights + meeting.
+
+    Filters:
+      - status: "calling" | "completed" (omitted = all)
+      - min_score: only return rows where interview_score >= min_score
+    Returns: {"items": [...], "total": N, "skip": S, "limit": L}
+    """
+    query: dict = {}
+    if status:
+        query["status"] = status
+    if min_score is not None:
+        query["interview_score"] = {"$gte": min_score}
+
+    coll = _screened()
+    total = coll.count_documents(query)
+    docs = list(coll.find(query).sort("called_at", -1).skip(skip).limit(limit))
+    if not docs:
+        return {"items": [], "total": total, "skip": skip, "limit": limit}
+
+    ids = [d["_id"] for d in docs]
+    insights_map = {i["_id"]: i for i in _insights_collection().find({"_id": {"$in": ids}})}
+    meetings_map = {m["_id"]: m for m in _meetings_collection().find({"_id": {"$in": ids}})}
+
+    for d in docs:
+        d["_id"] = str(d["_id"])
+        cid = d["_id"]
+        ins = insights_map.get(cid)
+        if ins:
+            ins["_id"] = str(ins["_id"])
+        mtg = meetings_map.get(cid)
+        if mtg:
+            mtg["_id"] = str(mtg["_id"])
+        d["insights"] = ins
+        d["meeting"] = mtg
+
+    return {"items": docs, "total": total, "skip": skip, "limit": limit}
+
+
+def _collect_hr_attendees(job: Optional[dict]) -> list[str]:
+    """Job se primary HR + team member emails collect karo.
+
+    Order: primary HR first (used for freebusy lookup), then team members.
+    Duplicates removed, order preserved.
+    Raises ValueError if job has no primary_hr_email (required field).
+    """
+    if not job or not job.get("primary_hr_email"):
+        raise ValueError("Job has no primary_hr_email; cannot schedule meeting.")
+    emails: list[str] = [job["primary_hr_email"]]
+    for m in job.get("team_members") or []:
+        email = (m or {}).get("email")
+        if email:
+            emails.append(email)
+    seen: set[str] = set()
+    return [e for e in emails if not (e in seen or seen.add(e))]
+
+
 def _normalize_phone(raw) -> Optional[str]:
     """Normalize CV phone strings into E.164.
 
@@ -187,14 +261,43 @@ def _score_interview(transcript: str, summary: str) -> int:
     return max(0, min(100, int(m.group(0))))
 
 
-def record_call_result(call_id: str, transcript: str, summary: str) -> None:
-    """Called from the Vapi webhook handler. Updates the screened_candidates doc."""
+def record_call_result(
+    call_id: str,
+    transcript: str,
+    summary: str,
+    end_reason: str = "unknown",
+    duration: int = 0,
+) -> None:
+    """Called from the Vapi webhook handler.
+
+    Categorizes the call (completed/cancelled/declined), logs to call_logs,
+    and runs the full downstream flow (score, insights, meeting) only for
+    completed calls. Declined calls get scheduled for retry.
+    """
     doc = _screened().find_one({"call_id": call_id})
     if not doc:
         print(f"[vapi] webhook for unknown call_id={call_id}", file=sys.stderr)
         return
 
-    interview_score = _score_interview(transcript or "", summary or "")
+    from call_logs import categorize_call, log_call_attempt
+    category, reason_label = categorize_call(end_reason, transcript or "", duration)
+
+    interview_score: Optional[int] = None
+    if category == "completed":
+        interview_score = _score_interview(transcript or "", summary or "")
+
+    log_call_attempt(
+        candidate_id=doc["_id"],
+        jd_id=doc.get("jd_id"),
+        call_id=call_id,
+        category=category,
+        reason=reason_label,
+        vapi_end_reason=end_reason,
+        transcript=transcript or "",
+        duration=duration,
+        score=interview_score,
+        triggered_by=doc.get("triggered_by", "auto"),
+    )
 
     _screened().update_one(
         {"_id": doc["_id"]},
@@ -202,10 +305,61 @@ def record_call_result(call_id: str, transcript: str, summary: str) -> None:
             "transcript": transcript,
             "summary": summary,
             "interview_score": interview_score,
-            "status": "completed",
+            "status": category,
+            "category_reason": reason_label,
+            "vapi_end_reason": end_reason,
+            "duration_seconds": duration,
             "completed_at": datetime.now(timezone.utc),
         }},
     )
+
+    if category != "completed":
+        print(
+            f"[vapi] call {call_id} categorized as {category} ({reason_label}). "
+            f"Skipping insights + meeting.",
+            file=sys.stderr,
+        )
+        return
+
+    insights = None
+    try:
+        from transcript_analyzer import extract_interview_insights
+        insights = extract_interview_insights(transcript or "")
+        insights["_id"] = doc["_id"]
+        insights["call_id"] = call_id
+        insights["candidate_name_from_form"] = doc.get("name")
+        insights["candidate_email"] = doc.get("email")
+        insights["candidate_phone"] = doc.get("phone_e164")
+        insights["jd_id"] = doc.get("jd_id")
+        insights["interview_score"] = interview_score
+        insights["extracted_at"] = datetime.now(timezone.utc)
+        _insights_collection().replace_one(
+            {"_id": doc["_id"]}, insights, upsert=True
+        )
+        print(f"[insights] saved for {doc.get('name')}", file=sys.stderr)
+    except Exception as e:
+        print(f"[insights] extraction failed for call_id={call_id}: {e!r}", file=sys.stderr)
+
+    threshold = int(os.getenv("CALENDAR_THRESHOLD", "60"))
+    if interview_score >= threshold and doc.get("email"):
+        try:
+            job = _jobs_collection().find_one({"_id": doc.get("jd_id")})
+            hr_attendees = _collect_hr_attendees(job)
+            from calendar_agent import schedule_interview
+            meeting = schedule_interview(doc, interview_score,
+                                          hr_attendees=hr_attendees,
+                                          insights=insights)
+            meeting["_id"] = doc["_id"]
+            meeting["call_id"] = call_id
+            _meetings_collection().replace_one(
+                {"_id": doc["_id"]}, meeting, upsert=True
+            )
+            print(f"[calendar] meeting scheduled for {doc.get('name')} at {meeting['meeting_time']}", file=sys.stderr)
+        except Exception as e:
+            print(f"[calendar] scheduling failed for call_id={call_id}: {e!r}", file=sys.stderr)
+    else:
+        reason = "low_score" if interview_score < threshold else "missing_email"
+        print(f"[calendar] skipped for {doc.get('name')}: score={interview_score} threshold={threshold} reason={reason}", file=sys.stderr)
 
 
 if __name__ == "__main__":

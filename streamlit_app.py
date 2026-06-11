@@ -1,4 +1,5 @@
 import streamlit as st
+import pandas as pd
 import requests
 from requests import Response
 
@@ -336,6 +337,294 @@ def render_shortlisted():
 
 
 # -----------------------------
+# PAGE: SCREENED CANDIDATES
+# -----------------------------
+
+def _fmt_meeting_time(iso: str | None) -> str:
+    if not iso:
+        return "—"
+    try:
+        from datetime import datetime as _dt
+        return _dt.fromisoformat(iso.replace("Z", "+00:00")).strftime("%a, %d %b %Y · %I:%M %p")
+    except Exception:
+        return iso
+
+
+def render_screened():
+    _page_header("Screened Candidates", "Phone-screened candidates with interview insights and scheduled meetings.")
+
+    f1, f2 = st.columns([2, 3])
+    with f1:
+        status_choice = st.selectbox("Status", ["All", "completed", "calling"], key="screened_status")
+    with f2:
+        min_score = st.slider("Min Interview Score", 0, 100, 0, 5, key="screened_min_score")
+
+    limit = st.session_state.get("screened_limit", 10)
+    skip = st.session_state.get("screened_skip", 0)
+    params = {"skip": skip, "limit": limit}
+    if status_choice != "All":
+        params["status"] = status_choice
+    if min_score > 0:
+        params["min_score"] = min_score
+
+    try:
+        resp = requests.get(f"{API_BASE}/screened_candidates", params=params, timeout=30)
+    except requests.RequestException as e:
+        st.error("Failed to call API."); st.write(str(e)); return
+    data = _parse_json_response(resp)
+    if data is None:
+        return
+
+    items = data.get("items", [])
+    total = data.get("total", 0)
+    completed = sum(1 for c in items if c.get("status") == "completed")
+    with_meeting = sum(1 for c in items if c.get("meeting"))
+
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Total Screened", total)
+    m2.metric("Completed (this page)", completed)
+    m3.metric("Meetings Scheduled (this page)", with_meeting)
+    st.write("")
+
+    if not items:
+        st.info("No screened candidates match these filters yet.")
+        return
+
+    for c in items:
+        with st.container(border=True):
+            top1, top2 = st.columns([4, 1])
+            with top1:
+                st.markdown(f"### {c.get('name') or '—'}")
+                st.caption(
+                    f"📧 {c.get('email') or '—'}  ·  📞 {c.get('phone_e164') or '—'}  ·  "
+                    f"Job: `{_short_id(c.get('jd_id'), 12)}…`"
+                )
+            with top2:
+                status = c.get("status", "")
+                if status == "calling":
+                    st.markdown(
+                        '<div style="text-align:right;margin-top:0.5rem;">'
+                        '<span style="background:#fef3c7;color:#92400e;padding:4px 12px;border-radius:999px;font-weight:600;font-size:0.85rem;">'
+                        '📞 Calling…</span></div>',
+                        unsafe_allow_html=True,
+                    )
+                else:
+                    st.markdown(
+                        f"<div style='text-align:right;margin-top:0.5rem;'>{_fit_pill(int(c.get('interview_score') or 0))}</div>",
+                        unsafe_allow_html=True,
+                    )
+
+            insights = c.get("insights") or {}
+            if insights and not insights.get("extraction_failed"):
+                st.markdown("**📋 Interview Insights**")
+                ic1, ic2 = st.columns(2)
+                with ic1:
+                    if insights.get("current_role"):
+                        st.write(f"💼 **Role:** {insights['current_role']}")
+                    if insights.get("current_company"):
+                        st.write(f"🏢 **Company:** {insights['current_company']}")
+                    if insights.get("years_experience") is not None:
+                        st.write(f"📅 **Experience:** {insights['years_experience']} yrs")
+                    if insights.get("tech_stack"):
+                        st.write(f"🛠️ **Tech:** {', '.join(insights['tech_stack'][:6])}")
+                with ic2:
+                    cur_sal = (insights.get("current_salary") or {}).get("raw_text")
+                    exp_sal = (insights.get("expected_salary") or {}).get("raw_text")
+                    if cur_sal:
+                        st.write(f"💰 **Current Salary:** {cur_sal}")
+                    if exp_sal:
+                        st.write(f"💸 **Expected Salary:** {exp_sal}")
+                    if insights.get("notice_period_weeks") is not None:
+                        st.write(f"⏰ **Notice:** {insights['notice_period_weeks']} wks")
+                    if insights.get("work_mode_preference"):
+                        st.write(f"🏠 **Mode:** {insights['work_mode_preference']}")
+
+            meeting = c.get("meeting") or {}
+            if meeting:
+                st.markdown("**📅 Scheduled Meeting**")
+                st.write(f"🕐 **Time:** {_fmt_meeting_time(meeting.get('meeting_time'))}")
+                if meeting.get("meet_link"):
+                    st.markdown(f"🔗 **[Join Google Meet]({meeting['meet_link']})**")
+                attendees = meeting.get("attendees") or []
+                if attendees:
+                    st.caption(f"👥 Attendees: {', '.join(attendees)}")
+            elif status == "completed" and (c.get("interview_score") or 0) >= 60:
+                st.caption("⚠️ Score qualifies but no meeting scheduled.")
+
+    st.write("")
+    _paginator("screened_skip", total, limit)
+    _per_page_selector("screened_limit")
+
+
+# -----------------------------
+# PAGE: CALL LOGS
+# -----------------------------
+
+CATEGORY_BADGE = {
+    "completed": ("#dcfce7", "#166534", "✅"),
+    "cancelled": ("#e5e7eb", "#374151", "✕"),
+    "declined":  ("#fee2e2", "#991b1b", "🔄"),
+}
+
+STATUS_BADGE = {
+    "pending_retry": ("#fef3c7", "#92400e", "⏰ Pending Retry"),
+    "retried":       ("#dbeafe", "#1e40af", "🔁 Retried"),
+    "exhausted":     ("#fee2e2", "#991b1b", "💀 Exhausted"),
+    "closed":        ("#e5e7eb", "#374151", "🔒 Closed"),
+}
+
+
+def _badge_html(text: str, bg: str, fg: str) -> str:
+    return (
+        f'<span style="background:{bg};color:{fg};padding:4px 12px;'
+        f'border-radius:999px;font-weight:600;font-size:0.8rem;">{text}</span>'
+    )
+
+
+def render_call_logs():
+    _page_header("Call Logs", "Every call attempt — categorized, retry-aware, auditable.")
+
+    stats = requests.get(f"{API_BASE}/call-stats", timeout=15).json()
+    m1, m2, m3, m4, m5 = st.columns(5)
+    m1.metric("Total", stats.get("total", 0))
+    m2.metric("✅ Completed", stats.get("completed", 0))
+    m3.metric("🔄 Declined", stats.get("declined", 0))
+    m4.metric("⏰ Pending Retry", stats.get("pending_retry", 0))
+    m5.metric("💀 Exhausted", stats.get("exhausted", 0))
+    st.write("")
+
+    f1, f2 = st.columns(2)
+    with f1:
+        cat = st.selectbox("Category", ["All", "completed", "cancelled", "declined"], key="cl_cat")
+    with f2:
+        stat = st.selectbox("Status", ["All", "pending_retry", "retried", "exhausted", "closed"], key="cl_stat")
+
+    limit = st.session_state.get("cl_limit", 20)
+    skip = st.session_state.get("cl_skip", 0)
+    params = {"skip": skip, "limit": limit}
+    if cat != "All":
+        params["category"] = cat
+    if stat != "All":
+        params["status"] = stat
+
+    try:
+        resp = requests.get(f"{API_BASE}/call-logs", params=params, timeout=15)
+    except requests.RequestException as e:
+        st.error(f"API error: {e}")
+        return
+    data = _parse_json_response(resp)
+    if data is None:
+        return
+
+    items = data.get("items", [])
+    total = data.get("total", 0)
+    if not items:
+        st.info("No call logs match these filters.")
+        return
+
+    for log in items:
+        with st.container(border=True):
+            top1, top2 = st.columns([4, 1])
+            with top1:
+                category = log.get("category", "—")
+                cat_bg, cat_fg, cat_icon = CATEGORY_BADGE.get(category, ("#e5e7eb", "#374151", "📞"))
+                st.markdown(f"### {cat_icon} {category.title()}")
+                st.caption(
+                    f"Candidate: `{_short_id(log.get('candidate_id'), 12)}…` · "
+                    f"Job: `{_short_id(log.get('jd_id'), 12)}…` · "
+                    f"Attempt: **{log.get('attempt_number', 1)}/3** · "
+                    f"Duration: {log.get('duration_seconds', 0)}s"
+                )
+                reason = log.get("category_reason") or "—"
+                vapi_reason = log.get("vapi_end_reason") or "—"
+                st.write(f"**Reason:** `{reason}`  ·  Vapi: `{vapi_reason}`")
+                if log.get("interview_score") is not None:
+                    st.write(f"**Score:** {log['interview_score']}/100")
+                if log.get("next_retry_at"):
+                    st.write(f"⏰ **Next retry at:** {log['next_retry_at']}")
+            with top2:
+                status = log.get("status", "—")
+                bg, fg, label = STATUS_BADGE.get(status, ("#e5e7eb", "#374151", status))
+                st.markdown(
+                    f"<div style='text-align:right;margin-top:0.5rem;'>{_badge_html(label, bg, fg)}</div>",
+                    unsafe_allow_html=True,
+                )
+                st.write("")
+                if status in ("pending_retry", "exhausted"):
+                    if st.button("📞 Retry Now", key=f"retry_{log['_id']}"):
+                        r = requests.post(f"{API_BASE}/call-logs/{log['_id']}/retry-now", timeout=15)
+                        if r.status_code == 200:
+                            st.success("Queued for retry")
+                            st.rerun()
+                        else:
+                            st.error(r.text)
+                if status != "closed":
+                    if st.button("✕ Close", key=f"close_{log['_id']}"):
+                        r = requests.post(f"{API_BASE}/call-logs/{log['_id']}/close", timeout=15)
+                        if r.status_code == 200:
+                            st.success("Closed")
+                            st.rerun()
+                        else:
+                            st.error(r.text)
+
+    st.write("")
+    _paginator("cl_skip", total, limit)
+    _per_page_selector("cl_limit")
+
+
+# -----------------------------
+# PAGE: TEST CALL
+# -----------------------------
+
+def render_test_call():
+    _page_header("Test Call", "Quick trigger to test the full voice flow.")
+
+    TEST_PHONE = "+923219499451"
+    TEST_EMAIL = "filzanoornaeem@gmail.com"
+
+    with st.container(border=True):
+        st.markdown("### Test Configuration")
+        st.write(f"📞 **Phone:** {TEST_PHONE}")
+        st.write(f"📧 **Email (for meeting invite):** {TEST_EMAIL}")
+        st.write("💼 **Job:** Latest HR-equipped job auto-selected")
+        st.write("")
+
+        if st.button("📞 Call My Test Number", type="primary", use_container_width=True):
+            with st.spinner("Initiating Vapi call..."):
+                try:
+                    resp = requests.post(f"{API_BASE}/test-call", timeout=30)
+                except requests.RequestException as e:
+                    st.error(f"❌ Network error: {e}")
+                    return
+
+                if resp.status_code == 200:
+                    data = resp.json()
+                    st.success("✅ Call initiated! Pick up your phone.")
+                    st.code(
+                        f"Call ID : {data['call_id']}\n"
+                        f"Phone   : {data['phone']}\n"
+                        f"Job ID  : {data['job_id']}",
+                        language="text",
+                    )
+                    st.info(
+                        "📱 After the conversation, check the **🎤 Screened** page "
+                        "for score, insights, and meeting (if score ≥ 60)."
+                    )
+                else:
+                    try:
+                        detail = resp.json().get("detail", resp.text)
+                    except Exception:
+                        detail = resp.text
+                    st.error(f"❌ Failed (HTTP {resp.status_code}): {detail}")
+
+    st.write("")
+    st.caption(
+        "This bypasses the scheduler. The call goes through the full automatic flow afterward: "
+        "transcript → score → insights extraction → calendar meeting (if score ≥ 60)."
+    )
+
+
+# -----------------------------
 # PAGE: CREATE NEW JOB POST
 # -----------------------------
 
@@ -368,20 +657,55 @@ def render_create_job_post():
             with col1:
                 title = st.text_input("Job Title", placeholder="e.g. Senior Backend Engineer")
             with col2:
-                experience_level = st.selectbox(
-                    "Experience Level",
-                    ["Intern", "Junior", "Mid-level", "Senior", "Lead"],
+                experience_level = st.text_input(
+                    "Experience Required",
+                    placeholder="e.g. 5, Intern, 3+ years, Mid-Level",
                 )
             description = st.text_area("Description", placeholder="What does the role do day to day?", height=120)
             requirements = st.text_area("Requirements", placeholder="Skills, years of experience, must-haves…", height=120)
+
+            st.divider()
+            st.markdown("**Hiring Team**")
+            primary_hr_email = st.text_input(
+                "Primary HR Email",
+                placeholder="hr@company.com",
+                help="Job owner. Meeting slot is picked based on this person's calendar availability.",
+            )
+            st.caption("Additional team members — invited as attendees to interview meetings")
+            team_df = st.data_editor(
+                pd.DataFrame(columns=["email", "role"]),
+                num_rows="dynamic",
+                column_config={
+                    "email": st.column_config.TextColumn("Email", required=True),
+                    "role": st.column_config.SelectboxColumn(
+                        "Role",
+                        options=["recruiter", "hiring_manager", "tech_lead", "interviewer"],
+                        required=True,
+                    ),
+                },
+                hide_index=True,
+                use_container_width=True,
+                key="team_editor",
+            )
+
             submitted = st.form_submit_button("Generate Job Post", type="primary", use_container_width=True)
 
             if submitted:
+                if not primary_hr_email.strip():
+                    st.error("Primary HR Email is required.")
+                    st.stop()
+                team_members = [
+                    {"email": r["email"].strip(), "role": r["role"]}
+                    for _, r in team_df.iterrows()
+                    if r.get("email") and str(r["email"]).strip() and r.get("role")
+                ]
                 payload = {
                     "title": title,
                     "experience_level": experience_level,
                     "description": description,
                     "requirements": requirements,
+                    "primary_hr_email": primary_hr_email.strip(),
+                    "team_members": team_members,
                 }
                 try:
                     response = requests.post(f"{API_BASE}/job-posts", json=payload, timeout=60)
@@ -478,6 +802,9 @@ with st.sidebar:
         "📊 Open Jobs": render_open_jobs,
         "👥 Candidates": render_candidates,
         "⭐ Shortlisted": render_shortlisted,
+        "🎤 Screened": render_screened,
+        "📋 Call Logs": render_call_logs,
+        "🧪 Test Call": render_test_call,
         "✏️ Create Job Post": render_create_job_post,
     }
     page = st.radio("Navigation", list(PAGES.keys()), label_visibility="collapsed")

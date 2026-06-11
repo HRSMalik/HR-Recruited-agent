@@ -1,5 +1,5 @@
 {
-  "description": "End-to-end eval dataset: one Senior AI Engineer JD, 10 CVs, ground truth + uniform expected band [50, 100].",
+  "description": "End-to-end eval dataset: one Senior AI Engineer JD, 10 CVs, ground truth + per-CV realistic expected score band based on experience gap + skill match.",
   "current_date_assumption": "2026-05-25",
 
   "job_form": {
@@ -43,9 +43,9 @@
         "freelance_experience_years_approx": 0.0
       },
       "expected_score_band": {
-        "min": 50,
-        "max": 100,
-        "rationale": "AI/ML Engineer with LLM/RAG hands-on, 3.1y experience."
+        "min": 35,
+        "max": 55,
+        "rationale": "3.1y AI/ML with LLM/RAG hands-on but ~2y short of senior, no AWS/mentoring experience visible."
       }
     },
     {
@@ -62,9 +62,9 @@
         "freelance_experience_years_approx": 0.0
       },
       "expected_score_band": {
-        "min": 50,
-        "max": 100,
-        "rationale": "Junior Data Scientist 3.3y, ML/forecasting focus."
+        "min": 20,
+        "max": 40,
+        "rationale": "Junior Data Scientist 3.3y with forecasting focus, lacks LLM/RAG expertise needed for senior AI role."
       }
     },
     {
@@ -81,9 +81,9 @@
         "freelance_experience_years_approx": 0.0
       },
       "expected_score_band": {
-        "min": 50,
-        "max": 100,
-        "rationale": "AI Engineer with MS AI, 3+ years (Contegris + Systems Limited), strong GenAI/RAG/LLM work."
+        "min": 35,
+        "max": 55,
+        "rationale": "AI Engineer MS AI with strong GenAI/RAG/LLM skills but only 3y vs required 5y, lacks senior-level AWS/mentoring."
       }
     },
     {
@@ -100,9 +100,9 @@
         "freelance_experience_years_approx": 0.0
       },
       "expected_score_band": {
-        "min": 50,
-        "max": 100,
-        "rationale": "AI/ML Engineer, extensive RAG/LangChain/LLM/AWS production work."
+        "min": 40,
+        "max": 60,
+        "rationale": "3.3y AI/ML with RAG/LangChain/AWS production work, partial fit but 1.7y short on experience."
       }
     },
     {
@@ -119,9 +119,9 @@
         "freelance_experience_years_approx": 0.0
       },
       "expected_score_band": {
-        "min": 50,
-        "max": 100,
-        "rationale": "Senior Gen-AI Engineer with 4.5y including multi-agent/LangChain/RAG production deployments at Northbay."
+        "min": 65,
+        "max": 85,
+        "rationale": "Senior Gen-AI Engineer 4.5y with multi-agent/LangChain/RAG production at Northbay, strong fit only 0.5y short."
       }
     },
     {
@@ -138,9 +138,9 @@
         "freelance_experience_years_approx": 0.0
       },
       "expected_score_band": {
-        "min": 50,
-        "max": 100,
-        "rationale": "Python Developer (AI/ML) 3.3y, YOLO/LLaMA/RAG production work."
+        "min": 35,
+        "max": 55,
+        "rationale": "3.3y Python Developer with AI/ML/RAG production work, but title indicates non-senior role and 1.7y short."
       }
     },
     {
@@ -157,9 +157,9 @@
         "freelance_experience_years_approx": 2.0
       },
       "expected_score_band": {
-        "min": 50,
-        "max": 100,
-        "rationale": "AI/ML + Automation Engineer ~5y total including 2y freelance, LLM/RAG/PEFT work."
+        "min": 55,
+        "max": 75,
+        "rationale": "~5y total (incl. 2y freelance) AI/ML + Automation, LLM/RAG/PEFT fine-tuning experience meets senior requirement."
       }
     },
     {
@@ -176,9 +176,9 @@
         "freelance_experience_years_approx": 0.0
       },
       "expected_score_band": {
-        "min": 50,
-        "max": 100,
-        "rationale": "ML Engineer 4y at Motive + Vyro, MS AI from NUST, transformer/RAG/LangChain work."
+        "min": 55,
+        "max": 75,
+        "rationale": "4y ML Engineer (Motive + Vyro), MS AI from NUST, strong transformer/RAG/LangChain skills, 1y short."
       }
     },
     {
@@ -195,9 +195,9 @@
         "freelance_experience_years_approx": 0.0
       },
       "expected_score_band": {
-        "min": 50,
-        "max": 100,
-        "rationale": "AI Developer 2.9y with LLM/RAG/Azure work, BS EE from ITU."
+        "min": 25,
+        "max": 45,
+        "rationale": "2.9y AI Developer with LLM/RAG/Azure work, 2y short and uses Azure (not preferred AWS/GCP)."
       }
     },
     {
@@ -214,9 +214,9 @@
         "freelance_experience_years_approx": 0.0
       },
       "expected_score_band": {
-        "min": 50,
-        "max": 100,
-        "rationale": "Deep Learning Engineer (projects-based) 2.5y, CNN/LSTM/Transformer with MLOps."
+        "min": 20,
+        "max": 40,
+        "rationale": "2.5y Deep Learning Engineer (projects-based, not production), CNN/LSTM focus rather than LLM/RAG."
       }
     }
   ],

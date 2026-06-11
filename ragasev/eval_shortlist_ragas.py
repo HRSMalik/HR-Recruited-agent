@@ -17,8 +17,6 @@ sys.stdout.reconfigure(encoding="utf-8")
 from dotenv import load_dotenv
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
-from langgraph.errors import GraphInterrupt
-from job_post import create_workflow_agent
 from parser_agent import process_cv
 from shortlisting_agent import _score_candidate_against_jd
 
@@ -40,16 +38,13 @@ CRITERIA = [
 
 
 def generate_jd_text(job_form: dict) -> str:
-    agent = create_workflow_agent()
-    config = {"configurable": {"thread_id": f"ragas-shortlist-{uuid.uuid4()}"}}
-    try:
-        response = agent.invoke({"form_data": job_form}, config=config)
-        if isinstance(response, dict) and "__interrupt__" in response:
-            return response["__interrupt__"][0].value.get("generated_post", "")
-        return response.get("generated_post", "") if isinstance(response, dict) else ""
-    except GraphInterrupt as e:
-        interrupts = e.args[0] if e.args else []
-        return interrupts[0].value.get("generated_post", "") if interrupts else ""
+    """Build a JD string directly from the form (bypasses langgraph workflow)."""
+    return (
+        f"Job Title: {job_form.get('title', '')}\n"
+        f"Experience Level: {job_form.get('experience_level', '')}\n"
+        f"Description: {job_form.get('description', '')}\n"
+        f"Requirements: {job_form.get('requirements', '')}\n"
+    )
 
 
 def main():

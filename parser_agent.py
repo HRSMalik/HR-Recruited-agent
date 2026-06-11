@@ -54,6 +54,7 @@ def _get_processed_collection():
 _GOOGLE_SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets.readonly",
     "https://www.googleapis.com/auth/drive.readonly",
+    "https://www.googleapis.com/auth/calendar",
 ]
 _GOOGLE_CREDS_PATH = ".credentials/credentials.json"
 _GOOGLE_TOKEN_PATH = ".credentials/google_token.json"
@@ -121,7 +122,11 @@ def authorize():
             return
 
     flow = InstalledAppFlow.from_client_secrets_file(_GOOGLE_CREDS_PATH, _GOOGLE_SCOPES)
-    creds = flow.run_local_server(port=0)
+    creds = flow.run_local_server(
+        port=0,
+        login_hint=os.getenv("HR_EMAIL", "filzanoornaeem@gmail.com"),
+        prompt="consent",
+    )
     os.makedirs(os.path.dirname(_GOOGLE_TOKEN_PATH), exist_ok=True)
     with open(_GOOGLE_TOKEN_PATH, "w") as f:
         f.write(creds.to_json())

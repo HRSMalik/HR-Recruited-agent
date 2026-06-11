@@ -2,9 +2,10 @@
 
 Sections:
   1. Cover & overall summary
-  2. Post Agent — what it does, test setup, criteria results, reasons
-  3. Parser Agent — field-wise results, per-CV failures with reasons
-  4. Shortlist Agent — band/stability results, per-CV reasons, insights
+  2. Parser Agent - field-wise results, per-CV failures with reasons
+  3. Shortlist Agent - band/stability results, per-CV reasons, insights
+
+# Post Agent section commented out - only Parser + Shortlist included.
 """
 import json
 from datetime import datetime
@@ -86,12 +87,12 @@ def pct(passed, total):
 # ===========================================================================
 # PAGE 1 — COVER + SUMMARY
 # ===========================================================================
-def section_cover(pdf, dataset, post_r, parser_r, shortlist_r):
+def section_cover(pdf, dataset, parser_r, shortlist_r):
     pdf.set_font("Helvetica", "B", 22)
     pdf.ln(15)
     pdf.cell(0, 12, "Detailed Evaluation Report", new_x="LMARGIN", new_y="NEXT", align="C")
     pdf.set_font("Helvetica", "", 12)
-    pdf.cell(0, 8, "HR Recruitment Agent - Three-Agent System", new_x="LMARGIN", new_y="NEXT", align="C")
+    pdf.cell(0, 8, "HR Recruitment Agent - Parser & Shortlist Agents", new_x="LMARGIN", new_y="NEXT", align="C")
     pdf.set_font("Helvetica", "I", 10)
     pdf.set_text_color(100, 100, 100)
     pdf.cell(0, 6, f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}", new_x="LMARGIN", new_y="NEXT", align="C")
@@ -119,7 +120,7 @@ def section_cover(pdf, dataset, post_r, parser_r, shortlist_r):
     pdf.set_font("Helvetica", "", 10)
 
     rows = [
-        ("Post Agent", post_r["summary"], _parse_ratio(post_r["summary"])),
+        # ("Post Agent", post_r["summary"], _parse_ratio(post_r["summary"])),
         ("Parser Agent", parser_r["summary"], _parse_ratio(parser_r["summary"])),
         ("Shortlist Agent", shortlist_r["summary"], _parse_ratio(shortlist_r["summary"])),
     ]
@@ -134,8 +135,8 @@ def section_cover(pdf, dataset, post_r, parser_r, shortlist_r):
     pdf.ln(4)
 
     pdf.h2("How to Read This Report")
-    pdf.para("This report evaluates three AI agents that work together in the recruitment workflow:")
-    pdf.bullet("Post Agent generates LinkedIn job posts from form input.")
+    pdf.para("This report evaluates two AI agents from the recruitment workflow:")
+    # pdf.bullet("Post Agent generates LinkedIn job posts from form input.")
     pdf.bullet("Parser Agent extracts structured data (name, email, etc.) from candidate CVs.")
     pdf.bullet("Shortlist Agent scores each candidate against the job description.")
     pdf.para("Each section below shows what the agent does, how it was tested, results, and reasons for any failures.")
@@ -149,9 +150,9 @@ def _parse_ratio(summary):
 
 
 # ===========================================================================
-# PAGE 2 — POST AGENT
+# PAGE 2 - POST AGENT  (commented out - not used in current report)
 # ===========================================================================
-def section_post(pdf, dataset, post_r):
+def _section_post_disabled(pdf, dataset, post_r):
     pdf.add_page()
     pdf.h1("1. Post Agent")
 
@@ -223,11 +224,11 @@ def _post_failure_reason(criterion, preview):
 
 
 # ===========================================================================
-# PAGE 3-4 — PARSER AGENT
+# PAGE 2-3 - PARSER AGENT
 # ===========================================================================
 def section_parser(pdf, dataset, parser_r):
     pdf.add_page()
-    pdf.h1("2. Parser Agent")
+    pdf.h1("1. Parser Agent")
 
     pdf.h2("What this agent does")
     pdf.para(
@@ -342,11 +343,11 @@ def _parser_failure_reason(field, predicted, expected):
 
 
 # ===========================================================================
-# PAGE 5-6 — SHORTLIST AGENT
+# PAGE 4-5 - SHORTLIST AGENT
 # ===========================================================================
 def section_shortlist(pdf, dataset, shortlist_r):
     pdf.add_page()
-    pdf.h1("3. Shortlist Agent")
+    pdf.h1("2. Shortlist Agent")
 
     pdf.h2("What this agent does")
     pdf.para(
@@ -437,7 +438,7 @@ def _shortlist_band_reason(avg, band, rationale):
 # ===========================================================================
 def main():
     dataset = json.loads((HERE / "eval_dataset.json").read_text(encoding="utf-8"))
-    post_r = json.loads((HERE / "results_post.json").read_text(encoding="utf-8"))
+    # post_r = json.loads((HERE / "results_post.json").read_text(encoding="utf-8"))
     parser_r = json.loads((HERE / "results_parser.json").read_text(encoding="utf-8"))
     shortlist_r = json.loads((HERE / "results_shortlist.json").read_text(encoding="utf-8"))
 
@@ -445,12 +446,12 @@ def main():
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
 
-    section_cover(pdf, dataset, post_r, parser_r, shortlist_r)
-    section_post(pdf, dataset, post_r)
+    section_cover(pdf, dataset, parser_r, shortlist_r)
+    # section_post(pdf, dataset, post_r)
     section_parser(pdf, dataset, parser_r)
     section_shortlist(pdf, dataset, shortlist_r)
 
-    out = HERE / "detail_eval_report.pdf"
+    out = HERE / "parser_shortlist_report.pdf"
     pdf.output(str(out))
     print(f"Saved: {out}")
 

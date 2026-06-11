@@ -17,7 +17,17 @@ from langgraph.types import Command
 from job_post import create_workflow_agent, _get_job_descriptions_collection
 from parser_agent import _get_candidates_collection, ingest_new_applicants
 from shortlisting_agent import shortlist_all_jobs
-from voice_agent import call_top_candidates, record_call_result
+from voice_agent import call_top_candidates, record_call_result, list_screened_candidates, _initiate_vapi_call, _screened, _candidates, _normalize_phone
+from call_logs import (
+    list_call_logs as cl_list,
+    call_stats as cl_stats,
+    manual_retry as cl_manual_retry,
+    close_log as cl_close,
+    process_retries as cl_process_retries,
+)
+from typing import Optional
+from datetime import datetime, timezone
+import uuid
 
 
 async def _shortlist_loop(interval_seconds: int):
@@ -41,19 +51,44 @@ async def _shortlist_loop(interval_seconds: int):
             print(f"[scheduler] error: {e!r}", file=sys.stderr)
 
 
+async def _retry_loop(interval_seconds: int = 60):
+    """Dedicated background loop that fires pending retries from call_logs."""
+    while True:
+        try:
+            await asyncio.sleep(interval_seconds)
+            result = await asyncio.to_thread(
+                cl_process_retries,
+                _initiate_vapi_call,
+                _candidates(),
+                _screened(),
+                _normalize_phone,
+            )
+            if result["retried"] or result["errors"]:
+                print(f"[retry] tick: {result}", file=sys.stderr)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:  # noqa: BLE001
+            print(f"[retry] error: {e!r}", file=sys.stderr)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     interval = int(os.getenv("SHORTLIST_INTERVAL_SECONDS", "3600"))
-    task = asyncio.create_task(_shortlist_loop(interval))
+    retry_interval = int(os.getenv("RETRY_LOOP_INTERVAL_SECONDS", "60"))
+    shortlist_task = asyncio.create_task(_shortlist_loop(interval))
+    retry_task = asyncio.create_task(_retry_loop(retry_interval))
     print(f"[shortlist] scheduler started; interval={interval}s", file=sys.stderr)
+    print(f"[retry] scheduler started; interval={retry_interval}s", file=sys.stderr)
     try:
         yield
     finally:
-        task.cancel()
-        try:
-            await task
-        except asyncio.CancelledError:
-            pass
+        shortlist_task.cancel()
+        retry_task.cancel()
+        for t in (shortlist_task, retry_task):
+            try:
+                await t
+            except asyncio.CancelledError:
+                pass
 
 
 app = FastAPI(title="Recruitment Module API", version="1.0.0", lifespan=lifespan)
@@ -237,6 +272,17 @@ async def list_shortlisted_candidates(
     return {"items": docs, "total": total, "skip": skip, "limit": limit}
 
 
+@app.get("/screened_candidates", tags=["Candidates"], response_model=CandidateListResponse)
+async def list_screened(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(10, ge=1, le=100),
+    status: Optional[str] = Query(None, description="Filter: 'calling' or 'completed'"),
+    min_score: Optional[int] = Query(None, ge=0, le=100, description="Only return rows with interview_score >= this"),
+):
+    """List candidates whose phone screening has been initiated, enriched with insights and meeting info."""
+    return list_screened_candidates(skip=skip, limit=limit, status=status, min_score=min_score)
+
+
 @app.get("/job-posts", tags=["Job Posts"], response_model=JobListResponse)
 async def list_job_posts(
     skip: int = Query(0, ge=0),
@@ -250,10 +296,56 @@ async def list_job_posts(
     return {"items": docs, "total": total, "skip": skip, "limit": limit}
 
 
+TEST_CALL_PHONE = "+923219499451"
+TEST_CALL_EMAIL = "filzanoornaeem@gmail.com"
+TEST_CALL_NAME = "Test Candidate"
+
+
+@app.post("/test-call", tags=["Test"])
+async def trigger_test_call():
+    """Manual trigger: call the configured test phone using the latest HR-equipped job.
+    Runs the full automatic flow after the call ends (score, insights, meeting)."""
+    job = _get_job_descriptions_collection().find_one(
+        {"primary_hr_email": {"$exists": True, "$ne": None}},
+        sort=[("_id", -1)],
+    )
+    if not job:
+        raise HTTPException(400, "No job with primary_hr_email found. Create a job first.")
+
+    call_id = _initiate_vapi_call(TEST_CALL_PHONE)
+    if not call_id:
+        raise HTTPException(500, "Vapi did not return a call_id.")
+
+    test_id = str(uuid.uuid4())
+    _screened().insert_one({
+        "_id": test_id,
+        "name": TEST_CALL_NAME,
+        "phone": TEST_CALL_PHONE,
+        "phone_e164": TEST_CALL_PHONE,
+        "email": TEST_CALL_EMAIL,
+        "fit_percent": 100,
+        "jd_id": job["_id"],
+        "call_id": call_id,
+        "status": "calling",
+        "called_at": datetime.now(timezone.utc),
+        "triggered_by": "test",
+    })
+
+    return {
+        "success": True,
+        "call_id": call_id,
+        "phone": TEST_CALL_PHONE,
+        "email": TEST_CALL_EMAIL,
+        "test_id": test_id,
+        "job_id": job["_id"],
+    }
+
+
 @app.post("/voice/webhook", tags=["Voice"])
 async def voice_webhook(payload: dict):
-    """Receive end-of-call reports from Vapi. Persists transcript + summary
-    and scores the interview into `screened_candidates`."""
+    """Receive end-of-call reports from Vapi. Categorizes the call (completed/
+    cancelled/declined), persists to call_logs, and runs the downstream flow
+    (score, insights, meeting) only for completed calls."""
     msg = payload.get("message") or {}
     if msg.get("type") != "end-of-call-report":
         return {"received": True, "ignored": True}
@@ -263,19 +355,68 @@ async def voice_webhook(payload: dict):
     if not call_id:
         return {"received": True, "error": "missing call_id"}
 
-    transcript = (
-        (msg.get("artifact") or {}).get("transcript")
-        or msg.get("transcript")
-        or ""
-    )
+    transcript_raw = (msg.get("artifact") or {}).get("transcript") or msg.get("transcript") or ""
+    if isinstance(transcript_raw, list):
+        transcript = "\n".join(
+            f"{(m.get('role') or 'AI').title()}: {m.get('message', '')}"
+            for m in transcript_raw
+        )
+    else:
+        transcript = transcript_raw
+
     summary = (
         (msg.get("analysis") or {}).get("summary")
         or msg.get("summary")
         or ""
     )
 
-    await asyncio.to_thread(record_call_result, call_id, transcript, summary)
+    end_reason = msg.get("endedReason") or call.get("endedReason") or "unknown"
+    duration = int(
+        call.get("duration")
+        or msg.get("durationSeconds")
+        or msg.get("duration")
+        or 0
+    )
+
+    await asyncio.to_thread(
+        record_call_result, call_id, transcript, summary, end_reason, duration
+    )
     return {"received": True}
+
+
+@app.get("/call-logs", tags=["Call Logs"])
+async def list_call_logs_endpoint(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
+    category: Optional[str] = Query(None, description="Filter: completed | cancelled | declined"),
+    status: Optional[str] = Query(None, description="Filter: pending_retry | retried | exhausted | closed"),
+):
+    """List call_logs entries with optional category and status filters."""
+    return cl_list(skip=skip, limit=limit, category=category, status=status)
+
+
+@app.get("/call-stats", tags=["Call Logs"])
+async def call_stats_endpoint():
+    """Aggregated counts for dashboard metrics."""
+    return cl_stats()
+
+
+@app.post("/call-logs/{log_id}/retry-now", tags=["Call Logs"])
+async def manual_retry_endpoint(log_id: str):
+    """Force the log's next_retry_at to NOW so the retry scheduler picks it up."""
+    ok = cl_manual_retry(log_id)
+    if not ok:
+        raise HTTPException(404, "Log not found or not retriable")
+    return {"success": True, "message": "Will retry on next scheduler tick"}
+
+
+@app.post("/call-logs/{log_id}/close", tags=["Call Logs"])
+async def close_log_endpoint(log_id: str):
+    """Mark a call_log as closed (terminal state, no more retries)."""
+    ok = cl_close(log_id)
+    if not ok:
+        raise HTTPException(404, "Log not found")
+    return {"success": True}
 
 
 @app.get("/health", tags=["Health Check"])

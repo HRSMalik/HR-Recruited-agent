@@ -323,10 +323,18 @@ def post_to_linkedin_node(state: dict, config: dict) -> dict:
     banner = "\n" + "=" * 70 + "\n"
     sys.stderr.write(banner)
     sys.stderr.write(f"GENERATED JOB POST (jd_id={thread_id})\n")
-    sys.stderr.write("Copy the Google Form link below to test form submission:\n")
     sys.stderr.write(banner)
     sys.stderr.write(final_content + "\n")
     sys.stderr.write(banner)
+
+    base_url = (os.getenv("GOOGLE_FORM_URL") or "").strip()
+    entry_id = (os.getenv("GOOGLE_FORM_JD_ENTRY_ID") or "").strip()
+    if base_url and entry_id and thread_id:
+        sep = "&" if "?" in base_url else "?"
+        form_link = f"{base_url}{sep}usp=pp_url&{entry_id}={thread_id}"
+        sys.stderr.write(">>> FORM LINK (copy this to submit candidate application) <<<\n")
+        sys.stderr.write(form_link + "\n")
+        sys.stderr.write(banner)
     sys.stderr.flush()
 
     out_path = os.path.join(os.path.dirname(__file__), "latest_post.txt")
@@ -349,9 +357,15 @@ def post_to_linkedin_node(state: dict, config: dict) -> dict:
         )
     )
 
+    form_data = state.get("form_data") or {}
     _get_job_descriptions_collection().replace_one(
         {"_id": thread_id},
-        {"_id": thread_id, "job_description": final_content},
+        {
+            "_id": thread_id,
+            "job_description": final_content,
+            "primary_hr_email": form_data.get("primary_hr_email"),
+            "team_members": form_data.get("team_members", []),
+        },
         upsert=True,
     )
 
