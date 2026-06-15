@@ -55,6 +55,7 @@ _GOOGLE_SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets.readonly",
     "https://www.googleapis.com/auth/drive.readonly",
     "https://www.googleapis.com/auth/calendar",
+    "https://www.googleapis.com/auth/gmail.send",
 ]
 _GOOGLE_CREDS_PATH = ".credentials/credentials.json"
 _GOOGLE_TOKEN_PATH = ".credentials/google_token.json"

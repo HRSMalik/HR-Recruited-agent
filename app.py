@@ -5,8 +5,8 @@ import sys
 from contextlib import asynccontextmanager
 
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi import FastAPI, HTTPException, Header, File, UploadFile, status, Form, Query, Depends
-from fastapi.responses import Response, JSONResponse
+from fastapi import FastAPI, HTTPException, Header, File, UploadFile, status, Form, Query, Depends, Body
+from fastapi.responses import Response, JSONResponse, HTMLResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from schemas import JobPostAgentRequest, HumanFeedback, JobPostAgentResult, CandidateListResponse, JobListResponse
 import uuid
@@ -25,6 +25,7 @@ from call_logs import (
     close_log as cl_close,
     process_retries as cl_process_retries,
 )
+from booking_agent import get_booking, select_slot
 from typing import Optional
 from datetime import datetime, timezone
 import uuid
@@ -417,6 +418,246 @@ async def close_log_endpoint(log_id: str):
     if not ok:
         raise HTTPException(404, "Log not found")
     return {"success": True}
+
+
+def _render_picker_page(booking: dict) -> str:
+    from collections import defaultdict
+    from datetime import datetime as _dt
+
+    grouped = defaultdict(list)
+    day_meta = {}
+    for iso in booking.get("available_slots") or []:
+        dt = _dt.fromisoformat(iso)
+        key = dt.strftime("%Y-%m-%d")
+        if key not in day_meta:
+            day_meta[key] = {
+                "weekday": dt.strftime("%a").upper(),
+                "day_num": dt.strftime("%d"),
+                "month": dt.strftime("%b %Y"),
+                "full": dt.strftime("%A, %B %d, %Y"),
+            }
+        grouped[key].append((iso, dt.strftime("%I:%M %p").lstrip("0")))
+
+    day_tabs = ""
+    slot_panels = ""
+    for idx, (key, items) in enumerate(grouped.items()):
+        meta = day_meta[key]
+        active = " active" if idx == 0 else ""
+        day_tabs += f'''
+          <button class="day-tab{active}" data-day="{key}">
+            <span class="dt-weekday">{meta["weekday"]}</span>
+            <span class="dt-num">{meta["day_num"]}</span>
+            <span class="dt-month">{meta["month"].split()[0]}</span>
+          </button>'''
+        buttons = "".join(
+            f'<button class="slot" data-slot="{iso}">{label}</button>'
+            for iso, label in items
+        )
+        slot_panels += f'''
+          <div class="slot-panel{active}" data-day="{key}">
+            <div class="panel-head">{meta["full"]}</div>
+            <div class="slot-grid">{buttons}</div>
+          </div>'''
+
+    token = booking["_id"]
+    name = booking.get("candidate_name", "Candidate")
+    score = booking.get("interview_score", "")
+    return f"""<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<title>Schedule Interview</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;700&family=Roboto:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  *{{box-sizing:border-box;margin:0;padding:0;}}
+  body{{font-family:'Google Sans','Roboto',-apple-system,BlinkMacSystemFont,sans-serif;
+       background:#f0f4f9;color:#202124;min-height:100vh;padding:32px 16px;}}
+  .container{{max-width:920px;margin:0 auto;background:#fff;border-radius:16px;
+              box-shadow:0 1px 3px rgba(60,64,67,.08),0 4px 16px rgba(60,64,67,.12);
+              overflow:hidden;}}
+  header{{padding:28px 32px;border-bottom:1px solid #e8eaed;
+         background:linear-gradient(135deg,#1a73e8 0%,#4285f4 100%);color:#fff;}}
+  header h1{{font-size:22px;font-weight:500;letter-spacing:.2px;margin-bottom:6px;}}
+  header p{{font-size:14px;opacity:.92;}}
+  .badge{{display:inline-block;background:rgba(255,255,255,.22);padding:3px 10px;
+         border-radius:12px;font-size:12px;font-weight:500;margin-left:8px;}}
+  .body{{display:grid;grid-template-columns:200px 1fr;gap:0;min-height:420px;}}
+  .day-list{{border-right:1px solid #e8eaed;padding:16px 0;background:#fafbfc;
+            overflow-y:auto;max-height:540px;}}
+  .day-tab{{display:flex;flex-direction:column;align-items:center;width:100%;padding:12px 8px;
+          background:transparent;border:none;border-left:3px solid transparent;cursor:pointer;
+          font-family:inherit;color:#5f6368;transition:all .15s;}}
+  .day-tab:hover{{background:#f1f3f4;}}
+  .day-tab.active{{background:#e8f0fe;border-left-color:#1a73e8;color:#1a73e8;}}
+  .dt-weekday{{font-size:11px;font-weight:500;letter-spacing:1px;opacity:.7;}}
+  .dt-num{{font-size:24px;font-weight:500;line-height:1.1;margin:2px 0;}}
+  .dt-month{{font-size:11px;opacity:.7;}}
+  .panel-wrap{{padding:24px 28px;}}
+  .slot-panel{{display:none;}}
+  .slot-panel.active{{display:block;}}
+  .panel-head{{font-size:15px;font-weight:500;color:#202124;margin-bottom:18px;
+              padding-bottom:12px;border-bottom:1px solid #e8eaed;}}
+  .slot-grid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:10px;}}
+  .slot{{padding:14px 8px;border:1px solid #dadce0;background:#fff;color:#1a73e8;
+        border-radius:8px;cursor:pointer;font-family:inherit;font-size:14px;font-weight:500;
+        transition:all .15s;}}
+  .slot:hover{{background:#e8f0fe;border-color:#1a73e8;box-shadow:0 1px 3px rgba(26,115,232,.2);}}
+  .slot:disabled{{opacity:.4;cursor:wait;}}
+  .footer{{padding:14px 32px;background:#fafbfc;border-top:1px solid #e8eaed;
+          font-size:12px;color:#5f6368;display:flex;justify-content:space-between;align-items:center;}}
+  #status{{font-weight:500;color:#1a73e8;}}
+  #status.error{{color:#d93025;}}
+  @media (max-width:680px){{
+    .body{{grid-template-columns:1fr;}}
+    .day-list{{display:flex;overflow-x:auto;border-right:none;border-bottom:1px solid #e8eaed;max-height:none;padding:8px;}}
+    .day-tab{{min-width:72px;border-left:none;border-bottom:3px solid transparent;}}
+    .day-tab.active{{border-left:none;border-bottom-color:#1a73e8;}}
+  }}
+</style></head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Schedule Your Interview <span class="badge">Score {score}/100</span></h1>
+      <p>Hi {name} — pick a time that works for you (Asia/Karachi)</p>
+    </header>
+    <div class="body">
+      <div class="day-list">{day_tabs}</div>
+      <div class="panel-wrap">{slot_panels}</div>
+    </div>
+    <div class="footer">
+      <span>Duration: 30 minutes &middot; Google Meet</span>
+      <span id="status"></span>
+    </div>
+  </div>
+<script>
+const TOKEN="{token}";
+document.querySelectorAll(".day-tab").forEach(t=>t.addEventListener("click",()=>{{
+  const d=t.dataset.day;
+  document.querySelectorAll(".day-tab").forEach(x=>x.classList.toggle("active",x===t));
+  document.querySelectorAll(".slot-panel").forEach(p=>p.classList.toggle("active",p.dataset.day===d));
+}}));
+document.querySelectorAll(".slot").forEach(b=>b.addEventListener("click",async()=>{{
+  const slot=b.dataset.slot;
+  const status=document.getElementById("status");
+  document.querySelectorAll(".slot").forEach(x=>x.disabled=true);
+  status.classList.remove("error");
+  status.textContent="Booking your slot...";
+  try{{
+    const r=await fetch(`/api/booking/${{TOKEN}}/select`,{{
+      method:"POST",headers:{{"Content-Type":"application/json"}},
+      body:JSON.stringify({{slot}})
+    }});
+    const j=await r.json();
+    if(j.ok){{window.location.href=`/book/${{TOKEN}}/confirmed`;}}
+    else{{status.classList.add("error");status.textContent="Error: "+(j.error||"unknown");
+         document.querySelectorAll(".slot").forEach(x=>x.disabled=false);}}
+  }}catch(e){{status.classList.add("error");status.textContent="Network error.";
+       document.querySelectorAll(".slot").forEach(x=>x.disabled=false);}}
+}}));
+</script></body></html>"""
+
+
+def _render_confirmed_page(booking: dict) -> str:
+    meet = booking.get("meet_link") or ""
+    slot_iso = booking.get("selected_slot") or ""
+    name = booking.get("candidate_name", "")
+    try:
+        from datetime import datetime as _dt
+        dt = _dt.fromisoformat(slot_iso)
+        when_day = dt.strftime("%A, %B %d, %Y")
+        when_time = dt.strftime("%I:%M %p").lstrip("0")
+    except Exception:
+        when_day = slot_iso
+        when_time = ""
+    return f"""<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Interview Confirmed</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;700&family=Roboto:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  *{{box-sizing:border-box;margin:0;padding:0;}}
+  body{{font-family:'Google Sans','Roboto',-apple-system,sans-serif;background:#f0f4f9;
+       color:#202124;min-height:100vh;display:flex;align-items:center;justify-content:center;
+       padding:24px;}}
+  .card{{max-width:520px;width:100%;background:#fff;border-radius:16px;
+        box-shadow:0 1px 3px rgba(60,64,67,.08),0 4px 16px rgba(60,64,67,.12);overflow:hidden;}}
+  .check{{padding:36px 24px 16px;text-align:center;
+         background:linear-gradient(135deg,#0f9d58 0%,#34a853 100%);color:#fff;}}
+  .check svg{{width:56px;height:56px;background:rgba(255,255,255,.22);border-radius:50%;
+             padding:14px;margin-bottom:12px;}}
+  .check h1{{font-size:22px;font-weight:500;}}
+  .check p{{font-size:14px;opacity:.92;margin-top:4px;}}
+  .body{{padding:24px 28px;}}
+  .row{{display:flex;align-items:flex-start;gap:14px;padding:14px 0;border-bottom:1px solid #f1f3f4;}}
+  .row:last-child{{border-bottom:none;}}
+  .icon{{width:36px;height:36px;background:#e8f0fe;color:#1a73e8;border-radius:50%;
+        display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:18px;}}
+  .row .label{{font-size:12px;color:#5f6368;text-transform:uppercase;letter-spacing:.5px;
+              font-weight:500;margin-bottom:2px;}}
+  .row .value{{font-size:15px;color:#202124;font-weight:500;}}
+  .row .value a{{color:#1a73e8;text-decoration:none;word-break:break-all;}}
+  .row .value a:hover{{text-decoration:underline;}}
+  .footer{{padding:14px 28px;background:#fafbfc;border-top:1px solid #e8eaed;
+          font-size:12px;color:#5f6368;text-align:center;}}
+</style></head>
+<body>
+  <div class="card">
+    <div class="check">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 16.2l-3.5-3.5L4 14.2l5 5 11-11-1.5-1.5z"/></svg>
+      <h1>Interview Confirmed</h1>
+      <p>A calendar invite has been emailed to you</p>
+    </div>
+    <div class="body">
+      <div class="row">
+        <div class="icon">&#128197;</div>
+        <div><div class="label">Date</div><div class="value">{when_day}</div></div>
+      </div>
+      <div class="row">
+        <div class="icon">&#128338;</div>
+        <div><div class="label">Time</div><div class="value">{when_time} (Asia/Karachi)</div></div>
+      </div>
+      <div class="row">
+        <div class="icon">&#127909;</div>
+        <div><div class="label">Google Meet</div><div class="value"><a href="{meet}">{meet}</a></div></div>
+      </div>
+      <div class="row">
+        <div class="icon">&#128100;</div>
+        <div><div class="label">Candidate</div><div class="value">{name}</div></div>
+      </div>
+    </div>
+    <div class="footer">Need to reschedule? Reply to the calendar invite email.</div>
+  </div>
+</body></html>"""
+
+
+@app.get("/book/{token}", tags=["Booking"], response_class=HTMLResponse)
+async def show_booking_page(token: str):
+    booking = get_booking(token)
+    if not booking:
+        return HTMLResponse("<h2>Invalid booking link.</h2>", status_code=404)
+    if booking["status"] == "booked":
+        return HTMLResponse(_render_confirmed_page(booking))
+    expires = booking["expires_at"]
+    if expires.tzinfo is None:
+        expires = expires.replace(tzinfo=timezone.utc)
+    if expires <= datetime.now(timezone.utc):
+        return HTMLResponse("<h2>This link has expired. Please contact HR.</h2>", status_code=410)
+    return HTMLResponse(_render_picker_page(booking))
+
+
+@app.post("/api/booking/{token}/select", tags=["Booking"])
+async def api_select_slot(token: str, payload: dict = Body(...)):
+    slot = payload.get("slot")
+    if not slot:
+        raise HTTPException(400, "slot is required")
+    result = await asyncio.to_thread(select_slot, token, slot)
+    return result
+
+
+@app.get("/book/{token}/confirmed", tags=["Booking"], response_class=HTMLResponse)
+async def show_confirmed_page(token: str):
+    booking = get_booking(token)
+    if not booking or booking["status"] != "booked":
+        return HTMLResponse("<h2>No confirmed booking found.</h2>", status_code=404)
+    return HTMLResponse(_render_confirmed_page(booking))
 
 
 @app.get("/health", tags=["Health Check"])

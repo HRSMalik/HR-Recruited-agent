@@ -179,11 +179,17 @@ def _initiate_vapi_call(phone_e164: str) -> Optional[str]:
     return resp.json().get("id")
 
 
-def call_top_candidates(threshold: int = 80) -> dict:
+def call_top_candidates(threshold: Optional[int] = None) -> dict:
     """Initiate Vapi calls for shortlisted candidates not yet screened.
+
+    Eligibility: `fit_percent >= threshold`. The threshold is taken from
+    `VOICE_CALL_THRESHOLD` env var so it can be tuned without code changes.
 
     Returns: {"called": N, "skipped": N, "errors": [...]}.
     """
+    if threshold is None:
+        threshold = int(os.getenv("VOICE_CALL_THRESHOLD", "70"))
+
     missing = [
         name for name in ("VAPI_API_KEY", "VAPI_ASSISTANT_ID", "VAPI_PHONE_NUMBER_ID")
         if not os.getenv(name)
@@ -235,23 +241,84 @@ def call_top_candidates(threshold: int = 80) -> dict:
     return {"called": called, "skipped": skipped, "errors": errors}
 
 
-def _score_interview(transcript: str, summary: str) -> int:
-    """LLM rates the candidate 0-100 from the interview content."""
-    prompt = f"""
-    You are evaluating a phone-screen interview. Score the candidate 0-100 based on:
-    - Clarity and confidence of communication
-    - Demonstrated relevant experience
-    - Engagement and interest in the role
-    - Red flags (vague answers, evasiveness, contradictions)
+_MAX_JD_CHARS = 2000
 
-    INTERVIEW SUMMARY:
-    {summary}
 
-    FULL TRANSCRIPT:
-    {transcript}
+def _score_interview(transcript: str, summary: str, job_description: Optional[str] = None) -> int:
+    """LLM rates the candidate 0-100 against the JD.
 
-    Return ONLY a single integer between 0 and 100. No explanation, no other text.
+    Scoring is job-aware: the candidate is judged on how well their interview
+    answers match THIS specific job's requirements (role, skills, experience).
+    If `job_description` is missing (e.g. test cases), falls back to a generic
+    rubric so the function never crashes.
     """
+    jd_block = (job_description or "").strip()[:_MAX_JD_CHARS]
+
+    jd_section = (
+        f"=========== JOB DESCRIPTION ===========\n{jd_block}\n=======================================\n"
+        if jd_block
+        else "=========== JOB DESCRIPTION ===========\n(not available — score on general fit)\n=======================================\n"
+    )
+
+    prompt = f"""
+You are a senior recruiter scoring a phone-screen interview against a specific job.
+
+{jd_section}
+
+=========== INTERVIEW ===========
+Summary: {summary or "(no summary)"}
+
+Transcript:
+{transcript or "(no transcript)"}
+=================================
+
+HOW TO SCORE (0-100):
+Compare the candidate's interview answers AGAINST the JOB DESCRIPTION above. The
+score must reflect role-fit, not generic conversation quality.
+
+Weighted criteria:
+  1. Skill match (40%): Did the candidate mention the technologies, tools, or
+     domains listed in the JD's requirements? Direct matches are worth a lot.
+  2. Experience fit (25%): Does their stated experience (years, projects,
+     responsibilities) align with what the JD asks for?
+  3. Communication clarity (20%): Are answers specific, structured, confident?
+  4. Engagement & motivation (15%): Did they show interest in THIS role?
+
+5-TIER RUBRIC:
+  85-100  Exceptional fit. Most/all required skills mentioned with specific
+          examples. Experience clearly aligns. Strong, structured answers.
+  70-84   Strong candidate. Most key skills covered. Relevant experience.
+          Clear communication.
+  60-74   Decent fit. Partial skill overlap. Basic competence shown.
+          Average communication.
+  40-59   Weak match. Few required skills mentioned. Vague or generic answers.
+  0-39    Poor fit. No skill alignment, off-topic, or clear red flags
+          (evasiveness, contradictions, no domain knowledge).
+
+IMPORTANT GUIDELINES:
+- Phone screens are SHORT (2-5 min). Do NOT penalize brevity. Focus on the
+  QUALITY of what was said, not the length.
+- A candidate who clearly names required tech and gives one concrete example is
+  a STRONG fit even in 3 minutes.
+- Reserve scores below 50 ONLY when the candidate has no skill overlap with the
+  JD or shows clear red flags. Don't default to "low score because short call".
+- If the JD section says "(not available)", judge general communication, clarity,
+  and engagement.
+
+CALIBRATION EXAMPLES (assuming JD asks for Python + FastAPI + ML):
+  Score 85: "I have 3 years building FastAPI APIs for ML pipelines at a fintech.
+            Currently leading a recommendation service using Python and PyTorch."
+            → Specific tech, role, context, direct match.
+  Score 65: "Yes, I know Python and have used FastAPI in a couple of projects.
+            Some ML exposure."
+            → Skills named but no depth.
+  Score 40: "I work with various technologies. Some Python here and there."
+            → Generic, no specifics, weak match.
+  Score 15: "I don't really use those tools. I mainly do other things."
+            → No alignment with JD.
+
+Return ONLY a single integer 0-100. No explanation. No other text.
+"""
     llm = init_chat_model("gpt-4o-mini", temperature=0)
     response = llm.invoke(prompt)
     raw = (response.content or "").strip()
@@ -284,7 +351,9 @@ def record_call_result(
 
     interview_score: Optional[int] = None
     if category == "completed":
-        interview_score = _score_interview(transcript or "", summary or "")
+        job = _jobs_collection().find_one({"_id": doc.get("jd_id")})
+        job_desc = (job or {}).get("job_description")
+        interview_score = _score_interview(transcript or "", summary or "", job_desc)
 
     log_call_attempt(
         candidate_id=doc["_id"],
@@ -343,23 +412,17 @@ def record_call_result(
     threshold = int(os.getenv("CALENDAR_THRESHOLD", "60"))
     if interview_score >= threshold and doc.get("email"):
         try:
-            job = _jobs_collection().find_one({"_id": doc.get("jd_id")})
-            hr_attendees = _collect_hr_attendees(job)
-            from calendar_agent import schedule_interview
-            meeting = schedule_interview(doc, interview_score,
-                                          hr_attendees=hr_attendees,
-                                          insights=insights)
-            meeting["_id"] = doc["_id"]
-            meeting["call_id"] = call_id
-            _meetings_collection().replace_one(
-                {"_id": doc["_id"]}, meeting, upsert=True
-            )
-            print(f"[calendar] meeting scheduled for {doc.get('name')} at {meeting['meeting_time']}", file=sys.stderr)
+            from booking_agent import create_slot_picker_booking
+            token = create_slot_picker_booking(doc, interview_score)
+            if token:
+                print(f"[booking] slot picker emailed to {doc.get('name')} token={token}", file=sys.stderr)
+            else:
+                print(f"[booking] slot picker NOT created for {doc.get('name')} (no slots or missing config)", file=sys.stderr)
         except Exception as e:
-            print(f"[calendar] scheduling failed for call_id={call_id}: {e!r}", file=sys.stderr)
+            print(f"[booking] slot picker failed for call_id={call_id}: {e!r}", file=sys.stderr)
     else:
         reason = "low_score" if interview_score < threshold else "missing_email"
-        print(f"[calendar] skipped for {doc.get('name')}: score={interview_score} threshold={threshold} reason={reason}", file=sys.stderr)
+        print(f"[booking] skipped for {doc.get('name')}: score={interview_score} threshold={threshold} reason={reason}", file=sys.stderr)
 
 
 if __name__ == "__main__":
