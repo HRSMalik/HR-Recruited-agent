@@ -278,11 +278,38 @@ score must reflect role-fit, not generic conversation quality.
 
 Weighted criteria:
   1. Skill match (40%): Did the candidate mention the technologies, tools, or
-     domains listed in the JD's requirements? Direct matches are worth a lot.
+     domains listed in the JD's requirements? BOTH direct matches AND
+     equivalent alternatives count strongly (see EQUIVALENT SKILLS below).
   2. Experience fit (25%): Does their stated experience (years, projects,
      responsibilities) align with what the JD asks for?
   3. Communication clarity (20%): Are answers specific, structured, confident?
   4. Engagement & motivation (15%): Did they show interest in THIS role?
+
+EQUIVALENT SKILLS — treat as essentially matching, credit the same:
+  - Data manipulation: Pandas ≈ Polars ≈ Dask ≈ PySpark
+  - Deep learning:     PyTorch ≈ TensorFlow ≈ JAX ≈ Keras
+  - Classical ML:      scikit-learn ≈ XGBoost ≈ LightGBM ≈ CatBoost
+  - Web backend:       FastAPI ≈ Flask ≈ Django REST ≈ Express ≈ NestJS
+  - Web frontend:      React ≈ Vue ≈ Svelte ≈ Angular ≈ SolidJS
+  - SSR / meta:        Next.js ≈ Nuxt ≈ Remix ≈ SvelteKit
+  - Styling:           Tailwind ≈ Bootstrap ≈ Material UI ≈ Chakra
+  - SQL DBs:           PostgreSQL ≈ MySQL ≈ MariaDB ≈ SQL Server
+  - NoSQL DBs:         MongoDB ≈ DynamoDB ≈ Firestore ≈ CosmosDB
+  - Caches/queues:     Redis ≈ Memcached ; Kafka ≈ RabbitMQ ≈ SQS
+  - Containers:        Docker ≈ Podman ; Kubernetes ≈ Docker Swarm ≈ Nomad
+  - Cloud:             AWS ≈ GCP ≈ Azure (cross-cloud experience is fine)
+  - LLM frameworks:    LangChain ≈ LlamaIndex ≈ Haystack ≈ Semantic Kernel
+  - ETL/orchestration: Airflow ≈ Prefect ≈ Dagster ≈ Luigi
+  - Vector stores:     Pinecone ≈ Weaviate ≈ Qdrant ≈ Milvus ≈ pgvector
+  - CI/CD:             GitHub Actions ≈ GitLab CI ≈ CircleCI ≈ Jenkins
+
+GENERAL EQUIVALENCE RULE: If a tool the candidate mentioned serves the SAME
+PURPOSE as a tool the JD requires, treat it as a match. Do NOT penalize the
+candidate just because they happen to use a different tool in the same family.
+
+MODERN ALTERNATIVE BONUS: If the candidate uses a NEWER/BETTER alternative
+(e.g., Polars instead of Pandas, Rust instead of C, FastAPI instead of Flask),
+treat it as a STRONG match — it signals up-to-date skills, not a gap.
 
 5-TIER RUBRIC:
   85-100  Exceptional fit. Most/all required skills mentioned with specific
@@ -305,10 +332,15 @@ IMPORTANT GUIDELINES:
 - If the JD section says "(not available)", judge general communication, clarity,
   and engagement.
 
-CALIBRATION EXAMPLES (assuming JD asks for Python + FastAPI + ML):
+CALIBRATION EXAMPLES (assuming JD asks for Python + FastAPI + ML + Pandas):
   Score 85: "I have 3 years building FastAPI APIs for ML pipelines at a fintech.
             Currently leading a recommendation service using Python and PyTorch."
             → Specific tech, role, context, direct match.
+  Score 82: "I use Python with Flask and Polars for data processing, and
+            TensorFlow for ML — recently migrated a pipeline from Pandas to
+            Polars for 10x speedup."
+            → JD said FastAPI/Pandas/PyTorch; candidate uses Flask/Polars/
+            TensorFlow — all equivalents, strong real example. STILL HIGH.
   Score 65: "Yes, I know Python and have used FastAPI in a couple of projects.
             Some ML exposure."
             → Skills named but no depth.

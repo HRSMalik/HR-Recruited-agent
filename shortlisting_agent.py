@@ -28,30 +28,128 @@ def _job_descriptions():
     return _get_db()["job_descriptions"]
 
 
+_MAX_CV_CHARS = 3000
+
+
+def _format_candidate(candidate: dict) -> str:
+    """Render candidate as clean, structured text for the LLM (avoid raw dict)."""
+    cv_text = (candidate.get("raw_cv_text") or "").strip()[:_MAX_CV_CHARS]
+    return f"""Name: {candidate.get('name') or 'Unknown'}
+
+Experience:
+  - Professional: {candidate.get('experience_years', 0)} years
+  - Freelance: {candidate.get('freelance_experience_years', 0)} years
+
+Education:
+  - Degree: {candidate.get('last_education_degree') or 'N/A'}
+  - Institution: {candidate.get('last_education_institution') or 'N/A'}
+
+Resume Content:
+{cv_text or '(empty)'}"""
+
+
 def _score_candidate_against_jd(candidate: dict, jd_text: str) -> int:
-    """Ask the LLM to score 0-100 how well the candidate fits the JD."""
-    candidate_summary = {
-        "name": candidate.get("name"),
-        "experience_years": candidate.get("experience_years"),
-        "freelance_experience_years": candidate.get("freelance_experience_years"),
-        "last_education_degree": candidate.get("last_education_degree"),
-        "last_education_institution": candidate.get("last_education_institution"),
-        "raw_cv_text": candidate.get("raw_cv_text", ""),
-    }
+    """LLM scores 0-100 how well the candidate's CV matches THIS specific JD."""
+    candidate_block = _format_candidate(candidate)
 
     prompt = f"""
-    You are evaluating whether a candidate is a fit for a job.
+You are a senior recruiter scoring how well a candidate's CV matches a specific job.
 
-    JOB DESCRIPTION:
-    {jd_text}
+=========== JOB DESCRIPTION ===========
+{jd_text}
+=======================================
 
-    CANDIDATE:
-    {candidate_summary}
+=========== CANDIDATE ===========
+{candidate_block}
+=================================
 
-    Compare the candidate's skills and experience against the job description.
-    Return ONLY a single integer between 0 and 100 representing the fit percentage.
-    No explanation, no other text, just the number.
-    """
+WEIGHTED CRITERIA:
+  1. Technical skill match (35%): JD's required tools/tech vs candidate's CV.
+     Direct matches AND equivalent alternatives both count strongly.
+  2. Experience relevance (30%): Years + project quality aligned with the role.
+  3. Education alignment (20%): Degree level + field match (see hierarchy).
+  4. Project specificity (10%): Concrete examples, quantifiable impact in CV.
+  5. Domain / industry match (5%): Same sector experience (bonus only).
+
+5-TIER RUBRIC:
+  85-100  Exceptional fit. All required skills present, strong relevant
+          experience, education aligned or exceeds requirement.
+  70-84   Strong candidate. Most key skills covered (direct or equivalent),
+          relevant experience, appropriate education.
+  60-74   Decent fit. Partial skill overlap, transferable experience, some
+          relevant background.
+  40-59   Weak match. Limited skill overlap, tangential experience.
+  0-39    Poor fit. No skill alignment, major mismatch.
+
+EQUIVALENT SKILLS — treat as essentially matching, credit the same:
+  - Data manipulation: Pandas ≈ Polars ≈ Dask ≈ PySpark
+  - Deep learning:     PyTorch ≈ TensorFlow ≈ JAX ≈ Keras
+  - Classical ML:      scikit-learn ≈ XGBoost ≈ LightGBM ≈ CatBoost
+  - Web backend:       FastAPI ≈ Flask ≈ Django REST ≈ Express ≈ NestJS
+  - Web frontend:      React ≈ Vue ≈ Svelte ≈ Angular ≈ SolidJS
+  - SSR / meta:        Next.js ≈ Nuxt ≈ Remix ≈ SvelteKit
+  - Styling:           Tailwind ≈ Bootstrap ≈ Material UI ≈ Chakra
+  - SQL DBs:           PostgreSQL ≈ MySQL ≈ MariaDB ≈ SQL Server
+  - NoSQL DBs:         MongoDB ≈ DynamoDB ≈ Firestore ≈ CosmosDB
+  - Caches/queues:     Redis ≈ Memcached ; Kafka ≈ RabbitMQ ≈ SQS
+  - Containers:        Docker ≈ Podman ; Kubernetes ≈ Docker Swarm ≈ Nomad
+  - Cloud:             AWS ≈ GCP ≈ Azure (cross-cloud is fine)
+  - LLM frameworks:    LangChain ≈ LlamaIndex ≈ Haystack ≈ Semantic Kernel
+  - ETL/orchestration: Airflow ≈ Prefect ≈ Dagster ≈ Luigi
+  - Vector stores:     Pinecone ≈ Weaviate ≈ Qdrant ≈ Milvus ≈ pgvector
+  - CI/CD:             GitHub Actions ≈ GitLab CI ≈ CircleCI ≈ Jenkins
+
+GENERAL EQUIVALENCE RULE: If a tool the candidate has serves the SAME PURPOSE
+as a tool the JD requires, credit it as a match. Do NOT penalize for using a
+different tool in the same family.
+
+MODERN ALTERNATIVE BONUS: Newer/better alternatives (e.g., Polars instead of
+Pandas, FastAPI instead of Flask, Rust instead of C) are a STRONG positive
+signal — they indicate up-to-date skills, not a gap.
+
+EDUCATION HIERARCHY:
+  Level credit:   PhD > MPhil/MS > Bachelor's > Diploma
+  Field alignment:
+    - Exact field match: full credit
+    - Adjacent field (CS ≈ Software Eng ≈ IT): full credit
+    - Related field (Data Science ≈ Statistics ≈ Math for ML role): ~80%
+    - Unrelated field: ~30%
+  Rules:
+    - A higher degree in a RELATED field is an UPGRADE, not a mismatch
+      (e.g., MPhil in AI for an AI Engineer role asking for Bachelor's = strong).
+    - Don't penalize "wrong degree name" if the field genuinely aligns.
+
+DOMAIN MATCH BONUS (+5 to +10):
+  If the JD names a domain (healthcare, fintech, e-commerce, edtech, gaming,
+  etc.) and the candidate's CV shows experience in that same domain:
+    - Direct domain match: +10
+    - Adjacent domain:     +5
+    - No domain mention:   no bonus, no penalty
+
+CALIBRATION EXAMPLES (assume JD: AI Engineer, Python + FastAPI + ML):
+
+  Score 90:
+    "5 years Python at fintech, built FastAPI services backing a PyTorch
+     recommendation system, deployed on AWS, led 4-person ML team."
+    → Direct skills + experience + leadership + domain.
+
+  Score 78:
+    "MPhil in AI from a top university, built 3 production ML models using
+     PyTorch, deployed with Flask on GCP, 1 year hands-on work."
+    → Strong education (MPhil > Bachelor's) + equivalents (Flask≈FastAPI,
+       GCP≈AWS) + concrete projects.
+
+  Score 62:
+    "3 years Python developer, built REST APIs with Flask, some ML through
+     online courses, no production ML deployment."
+    → Python yes, backend equivalent, but ML lacks depth.
+
+  Score 38:
+    "5 years JavaScript + PHP web developer, no Python or ML background."
+    → Major gap in required skills.
+
+Return ONLY a single integer 0-100. No explanation. No other text.
+"""
 
     llm = init_chat_model("gpt-4o-mini", temperature=0)
     response = llm.invoke(prompt)
