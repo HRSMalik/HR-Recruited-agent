@@ -41,3 +41,7 @@ extracted_data/
 .claude/
 .credentials/
 .trello_creds
+
+# Nested clones (separate git repos)
+hr-recruited/
+claude-stuff/
