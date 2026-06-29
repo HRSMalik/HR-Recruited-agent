@@ -244,4 +244,65 @@ db.screened.create_index("call_id", unique=True)                          # idem
 - **PII in logs (MINOR → elevate):** never log phone/name/`resume_text` — structured JSON logs with a redaction processor + allowlist; OWASP Logging Cheat Sheet bars logging PII/secrets. https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html GDPR/EEOC surface makes this higher-stakes here than a typical app.
 - **Deleted test suite (audit regression note):** every fix above needs a hermetic suite + CI gate, especially the bias/injection/idempotency regressions (golden set + adversarial injection corpus) — these double as **EU AI Act Art. 15 robustness evidence** and LL144 audit substrate.
 
+---
+---
+
+# Part 2 — Workflow Design · Logic Correctness · Completeness
+
+Added 2026-06-29. Three additional read-only audits extending Part 1: (A) workflow/architecture **design** quality, (B) business-**logic** correctness of the decision rules, (C) **completeness** — what is missing / what to add. Same branch (`hrfilza`), same non-destructive posture.
+
+## A · Workflow Design Audit
+
+**Verdict: working-but-fragile — above prototype, not yet well-architected.** The domain decomposition (parse→match→interview→book→rank), durable suspend/resume across two interrupts, and the slot-reservation concurrency guard are genuinely good. What keeps it fragile is *structural*, across 9 dimensions:
+
+- **DES-01 · No single source of truth (state triplication).** Candidate state lives in the LangGraph checkpoint **and** `screened_candidates` **and** `candidates_info`/`ranked_candidates`, with **two different status enums** for the same candidate. Nothing reconciles them → drift is inevitable. *Fix:* one canonical state + a repository layer; other stores are projections.
+- **DES-02 · Two orchestrators for one process.** `record_call_result` re-implements the book-vs-rank decision the graph already encodes — the routing logic is forked and can diverge. *Fix:* collapse to one orchestrator (the graph); the webhook only injects the result and resumes.
+- **DES-03 · Fail-open interrupts with no reaper.** Three suspend points (`start_interview`, `book`, `wait_retry`) park a thread **forever** if a webhook never arrives / a slot is never picked / a token expires. By design there is no timeout sweep. *Fix:* a 4th background loop + `last_transition_at` staleness detection → force `reject`/timeout.
+- **DES-04 · Ad-hoc idempotency, no end-to-end key.** Each node hand-rolls its own guard; `cv_id` is minted fresh on re-ingest, defeating the dedupe guards. *Fix:* one stable idempotency key per candidate-cycle; fix `mark_processed` ordering (mark before side-effect, not after).
+- **DES-05 · Single-process assumptions baked in.** SQLite checkpointer + the schedulers in `lifespan` run in **every** replica → a 2nd replica double-calls/double-books everyone. Cannot horizontally scale as written. *Fix:* decide the concurrency posture now — shared checkpointer (Postgres) + single-leader scheduler, or accept single-process and document it.
+- **DES-06 · Observability is a stderr black box.** `print(..., file=sys.stderr)` throughout; no endpoint to see where a candidate is stuck, no structured logs, loops swallow all exceptions and continue. *Fix:* structured logs + a pipeline-status endpoint.
+- **DES-07 · Coupling.** Nodes mix orchestration + IO + business + persistence; cross-module private helpers; **5 separate MongoClients**; import-inside-function cycles. *Fix:* layer the nodes (thin orchestration calling services), one shared client.
+- **DES-08 · Maintainability.** Two graphs with divergent conventions + dead code paths.
+- **DES-09 · LangGraph is being stretched.** This is a long-lived, externally-driven, durable workflow — **durable-execution territory** (Temporal/Restate). The team is hand-rolling reapers, idempotency keys, and checkpoint reconciliation that those systems subsume. Not a "switch now" call, but the direction of drift to name explicitly.
+
+**Top-5 design changes:** reaper+timeouts (DES-03) · collapse to one orchestrator (DES-02) · single source of truth + repository layer (DES-01) · one stable idempotency key + fix `mark_processed` ordering (DES-04) · decide concurrency posture (DES-05).
+
+## B · Logic-Correctness Audit (decision rules / gates / scoring)
+
+Cross-referenced against `PRD.md`. **Two substantive errors change *who gets interviewed/hired*** (L1, L2); the rest are consistency/edge defects. Composite math, boundary conditions (`>=`), and call-categorization heuristics all checked out **correct**.
+
+- **L1 · CV gate is inverted — MAJOR.** `route_after_match` gates CV→interview on `VOICE_CALL_THRESHOLD=70`, but the PRD match cutoff is **60%** (and an unused `CALENDAR_THRESHOLD=60` already exists). So the CV gate (70) is *stricter* than the post-interview book gate (60) — the funnel is backwards, and **CVs scoring 60-69 are rejected outright, never interviewed**. `pipeline.py:174`, `config.py:25,34`. *Fix:* gate CV on a 60 cutoff distinct from the book gate.
+- **L2 · Flagged 65-69 auto-rejected — MAJOR.** `RECOMMEND_REVIEW_MIN=70` sits *above* `YES=65`. For a flagged candidate the code returns `"review" if score>=70 else "no"` → a flagged 65-69 is **auto-rejected** while a flagged 70-79 gets human review. A 5-point dead zone that silently auto-rejects solid candidates, contradicting the "flagged → human review" intent. `ranking_agent.py:140-141`, `config.py:14-17`. *Fix:* tie `REVIEW_MIN` to the `YES` band (65).
+- **L3 · Bands aren't a monotonic ladder — MINOR.** `STRONG_YES=80 > REVIEW_MIN=70 > YES=65 > MAYBE=50` — `REVIEW_MIN` above `YES` is the root of L2. *Fix:* order `MAYBE ≤ YES ≤ STRONG_YES` with `REVIEW_MIN` tied to one.
+- **L4 · Retry count is lifetime, not per-cycle — MINOR.** `log_call_attempt` counts **all** call_logs for the candidate ever (no `jd_id`/cycle filter) → re-applicants/manual re-calls hit `exhausted` prematurely. `call_logs.py:135-137`.
+- **L5 · `manual_retry` is a no-op — MINOR.** It flips `exhausted→pending_retry`, but `process_retries` filters `attempt_number < MAX` → the HR override is silently dropped. `call_logs.py:264-273` vs `170-181`. *Fix:* honor a `triggered_by="manual"` bypass.
+- **L6 · Two scoring paths disagree — MINOR.** The pipeline `match` node omits `freelance_experience_years` (always 0 to the matcher), while `shortlist_for_jd` renders it → the same candidate scores differently by path. `pipeline.py:144-149`.
+- **L7 · Experience red-flag is dead code — MINOR.** `RULE_MIN_EXPERIENCE_YEARS=0` and the check is `exp < 0` → can never fire. `config.py:20`, `ranking_agent.py:171-172`. *Fix:* set a real minimum (or `<=`).
+
+**Substantive (changes hiring outcomes):** L1, L2, L7. **Highest-impact fixes:** reconcile the CV gate to 60 (L1) · fix the flagged 65-69 band (L2/L3) · set a real experience minimum (L7) · scope retries per-cycle + honor manual override (L4/L5) · pass freelance years in `match` (L6).
+
+## C · Completeness / "What to Add" Gap Analysis
+
+What's built: the full inbound LangGraph pipeline + 5 agents (job-post, parser, matching, voice-interview, ranking), config, auth, health/ready, Streamlit test UI. **Notably absent vs PRD:** the async-text interview (replaced by voice).
+
+**MUST-ADD — incomplete or unsafe without it:**
+1. **LinkedIn publish is still a no-op (PRD MVP bug #1 unfixed).** `mcp_server.py:195` — the click + context-close are commented out, yet `post_to_linkedin_node` returns `linkedin_posted: True`. The intake funnel never goes live; the API lies; Playwright contexts leak. *Effort S.*
+2. **Reaper for stuck threads** — pairs with DES-03. No timeout sweep on the 3 interrupts. *Effort M.*
+3. **Admin endpoint to inspect / replay / override a pipeline state** — `GET /admin/pipeline/{thread_id}` + resume/reject. Today: operationally blind, recovery = DB surgery. PRD claims "human override at every stage" — not built for the candidate pipeline. *Effort M.*
+4. **Candidate comms — rejection / confirmation / status emails.** Only slot-invite + reminder exist; **every rejected candidate hears nothing** (`send_email` primitive already exists). *Effort S-M.*
+5. **Dead-letter surface for failed applicants.** `_shortlist_loop` only `print`s launch errors and never marks failure → a malformed CV is **re-attempted every 30s forever** (poison pill). *Effort S.*
+6. **Config validation at startup** — server boots "healthy" while missing Google Form / Sheets / Vapi / calendar env silently breaks flows per-candidate. *Effort S.*
+
+**SHOULD-ADD:** 7. person-level dedup (today keyed only on Drive `file_id`) · 8. JD lifecycle close/expire/pause (a posted JD is processed forever → runaway Vapi/LLM spend) · 9. candidate status surface ("where is candidate X") · 10. async-text interview option (PRD Agent 4 as specified; voice excludes can't-call candidates) · 11. test suite + CI gate (tests were deleted in `854396a`; no `.github`) · 12. Dockerfile (PRD requires Docker+Uvicorn; none exists) · 13. metrics/structured logs/alerting.
+
+**Compliance features to ADD (tie to Part 1 legal findings):** 14. **human-in-the-loop decision surface** for the candidate pipeline (the `recommend()` "review" label exists but nothing routes a flagged candidate to a human — ties to AUD-C02) · 15. consent capture + candidate-facing explanation · 16. data-subject access/delete endpoint across all 7 collections + checkpointer · 17. retention/TTL policy (transcripts + Vapi recordings retained indefinitely) · 18. bias-audit logging + per-jurisdiction config.
+
+**NICE-TO-HAVE:** offer/ATS handoff · candidate self-reschedule · `/book/{token}` rate-limiting · "no phone" conflated with "weak CV" in `start_interview` · CSV export + recruiter notes · polished booking error pages.
+
+**Top priorities:** #1 publish no-op (nothing works without it) → #2 reaper + #3 admin/replay + #5 dead-letter (safe operation) → #4 rejection emails + #14 human-in-loop (defensible hiring product) → #8 JD close (stop runaway spend).
+
+---
+
+**Part 2 bottom line:** the pipeline is *functionally* close but **operationally and legally incomplete**. The most urgent functional gap is **#1 (LinkedIn publish is a silent no-op)** — the intake funnel never goes live. The most urgent *design* fixes are the **reaper (DES-03)** and **single source of truth (DES-01)**. The most urgent *logic* fixes are the **inverted CV gate (L1)** and **auto-rejected flagged 65-69 (L2)**. These converge with Part 1's #1 legal blocker (**human-in-the-loop, AUD-C02 = completeness #14**) — fix that surface once and it satisfies the legal, design, and completeness audits simultaneously.
+
 **Bottom line:** the release blockers are the two LEGAL items (C01 proxy, **C02 human-in-the-loop** — the single highest-stakes finding), with **M01 (gameable/silent-0 scoring)** elevated toward critical because it corrupts the legally-certified output. Build compliance as a configurable, per-jurisdiction product feature; treat **Title VII + GDPR Art. 22 + EU AI Act high-risk provider duties** as the durable floor.
