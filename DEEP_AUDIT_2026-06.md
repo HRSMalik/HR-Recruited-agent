@@ -306,3 +306,54 @@ What's built: the full inbound LangGraph pipeline + 5 agents (job-post, parser, 
 **Part 2 bottom line:** the pipeline is *functionally* close but **operationally and legally incomplete**. The most urgent functional gap is **#1 (LinkedIn publish is a silent no-op)** — the intake funnel never goes live. The most urgent *design* fixes are the **reaper (DES-03)** and **single source of truth (DES-01)**. The most urgent *logic* fixes are the **inverted CV gate (L1)** and **auto-rejected flagged 65-69 (L2)**. These converge with Part 1's #1 legal blocker (**human-in-the-loop, AUD-C02 = completeness #14**) — fix that surface once and it satisfies the legal, design, and completeness audits simultaneously.
 
 **Bottom line:** the release blockers are the two LEGAL items (C01 proxy, **C02 human-in-the-loop** — the single highest-stakes finding), with **M01 (gameable/silent-0 scoring)** elevated toward critical because it corrupts the legally-certified output. Build compliance as a configurable, per-jurisdiction product feature; treat **Title VII + GDPR Art. 22 + EU AI Act high-risk provider duties** as the durable floor.
+
+---
+---
+
+# Part 3 — Feature Backlog (Completeness Count)
+
+Added 2026-06-29. Every distinct *net-new feature* surfaced by the completeness audit (Part 2-C), de-duplicated and counted, with priority + effort. These are **additive features**, not the in-place fixes to existing code (those are the AUD-*/L*/DES-* findings above).
+
+**Total new features to build: 24** — grouped: **MUST-ADD 6 · SHOULD-ADD 7 · COMPLIANCE 5 · NICE-TO-HAVE 6**.
+
+### MUST-ADD (6) — pipeline is incomplete/unsafe without these
+| # | Feature | Effort | Where |
+|---|---------|--------|-------|
+| F1 | Make LinkedIn publish actually post (un-stub the click + context close) | S | `mcp_server.py:195` |
+| F2 | Reaper / timeout sweep for stuck pipeline threads | M | new `app.py` lifespan loop |
+| F3 | Admin endpoint to inspect / replay / override a candidate's pipeline state | M | `app.py` `GET/POST /admin/pipeline/{thread_id}` |
+| F4 | Candidate comms — rejection / confirmation / status emails | S-M | `reject` node + ingest |
+| F5 | Dead-letter surface for failed applicants (stop the 30s poison-pill retry) | S | `failed_applications` + `parser_agent` |
+| F6 | Startup config validation (fail loud on missing Form/Sheets/Vapi/calendar env) | S | `lifespan` |
+
+### SHOULD-ADD (7) — completeness / operability
+| # | Feature | Effort | Where |
+|---|---------|--------|-------|
+| F7 | Person-level candidate de-duplication (email/phone, not just Drive file_id) | M | `parser_agent`/`match` |
+| F8 | JD lifecycle — close / expire / pause a job (stop runaway Vapi/LLM spend) | M | `status` field + `POST /jobs/{jd_id}/close` |
+| F9 | Candidate status surface ("where is candidate X" funnel view) | S-M | mirror stage + status endpoint |
+| F10 | Async-text interview option (PRD Agent 4 as specified) | L | alternate interview node |
+| F11 | Test suite + CI gate (tests were deleted; no `.github`) | M | `tests/` + CI workflow |
+| F12 | Dockerfile (PRD requires Docker + Uvicorn; none exists) | S | repo root |
+| F13 | Monitoring / metrics / structured logs / alerting | M | cross-cutting |
+
+### COMPLIANCE (5) — hiring-product / legal (ties to Part 1)
+| # | Feature | Effort | Ties to |
+|---|---------|--------|---------|
+| F14 | Human-in-the-loop decision surface for the candidate pipeline | M | AUD-C02 |
+| F15 | Consent capture + candidate-facing decision explanation | M | GDPR Art. 22 |
+| F16 | Data-subject access / delete endpoint (all 7 collections + checkpointer) | M | GDPR |
+| F17 | Data-retention / TTL policy (transcripts + Vapi recordings) | S-M | GDPR |
+| F18 | Bias-audit logging + per-jurisdiction config | M | LL144 / Title VII |
+
+### NICE-TO-HAVE (6) — experience polish
+| # | Feature | Effort |
+|---|---------|--------|
+| F19 | Offer / next-stage ATS handoff/export | M |
+| F20 | Candidate self-service reschedule of an expired booking link | S-M |
+| F21 | Rate-limiting / abuse protection on public `/book/{token}` pages | S |
+| F22 | Partial-data handling — stop conflating "no phone" with "weak CV" | S |
+| F23 | Recruiter notes + CSV export on the shortlist | S |
+| F24 | Polished candidate-facing booking error pages | S |
+
+**Count summary:** **24 new features** — **6 must-add, 7 should-add, 5 compliance, 6 nice-to-have**. Of these, the 6 must-add + F14 are the gate to a launchable, defensible product; F1 alone is the single hard blocker (without it the intake funnel never goes live).
