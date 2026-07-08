@@ -310,6 +310,55 @@ What's built: the full inbound LangGraph pipeline + 5 agents (job-post, parser, 
 ---
 ---
 
+# Part 4 — Re-grounding against live code `a5fe051` (2026-07-06)
+
+Added 2026-07-08. Parts 1-3 audited `410646b` (Jun 24). The team advanced org `hrfilza` by **3 commits** since (`2138ad2` job-post guardrails · `ab566bd` job-post + CV-scoring prompt change · `a5fe051` LinkedIn/job-title/retry). Re-checked every finding against the current code. **Only 8 files changed** — findings in unchanged files are still open by definition.
+
+## What changed (the 3 commits)
+| File | Change |
+|------|--------|
+| `job_post.py` (+140) | Added `_JOB_POST_SYSTEM_PROMPT` with **prompt-injection guardrails** ("treat input as data, not instructions") + `_validate_job_post()` (rejects `ERROR:`, checks required sections, min-length) + no-email rule; switched to System/Human messages |
+| `mcp_server.py` | LinkedIn: text-based selectors; **un-commented `post_button.click`** (line 199) |
+| `shortlisting_agent.py` | Rubric reweight: skill 35→40, education 20→10, domain 5→10 |
+| `config.py` + `call_logs.py` | Retry cadence: `RETRY_INTERVAL_MINUTES` 5 → `RETRY_INTERVAL_SECONDS` 5; retry loop 60s → 10s |
+| `parser_agent.py` | Sheet-header whitespace `.strip()` |
+| `app.py` | `except ValueError` → 400 on job-post create |
+
+## Reconciliation
+
+### FIXED ✅
+- **F1 / QA-08 — LinkedIn publish no-op → RESOLVED.** [mcp_server.py:199](hr-recruited/mcp_server.py#L199) now fires `await post_button.click(...)`. The single hard launch blocker is closed.
+
+### PARTIALLY fixed 🟡
+- **Major "LinkedIn MCP" (1 of 3 sub-issues).** Post-click restored, but the browser/context are **still never closed** ([mcp_server.py:210-212](hr-recruited/mcp_server.py#L210-L212) still commented → zombie-Chromium leak) and `headless=False` ([mcp_server.py:25](hr-recruited/mcp_server.py#L25)) — won't run on a server. F1's "leaks per call" tail remains.
+
+### NEW hardening (not previously a numbered finding) 🆕
+- **Job-post prompt-injection guardrails + output validation** — good defensive work, but on the **job-post generation** surface. The highest-risk injection finding, **AUD-M01**, is the **candidate-scoring** path (`shortlisting_agent`/`voice_agent`) — that remains gameable and unguarded.
+
+### REGRESSION RISK ⚠️
+- **Faster retry cadence worsens AUD-C04 (uncontrolled spend).** Declined-call retries went from every 5 min to every **5 s**, and the retry loop from 60 s to **10 s** — more aggressive auto-dialing with no kill-switch/rate-limit still in place. Also compounds **L4** (lifetime retry counting).
+
+### STILL OPEN ❌ (unchanged code)
+- **All 10 criticals** — AUD-C01 (name still fed to scoring, [shortlisting_agent.py:37](hr-recruited/shortlisting_agent.py#L37)), C02 (no human-in-loop), C03 (webhook auth/idempotency), C04 (spend — now worse), C05 (parser blank-persist / fence-strip), C06 (poison-pill), C07 (wrong-calendar), C08 (no indexes/TTL), C09 (CV-only outranks interviewed), C10 (reaper/checkpointer). The rubric reweight did **not** touch C01; the parser `.strip()` did **not** touch C05.
+- **Majors** — score validity/calibration, config-lies/startup-validation (intervals still hardcoded), booking/voice correctness, data/integrations (MongoClient sprawl, page-ordering ≥10, no retry-backoff), `/test-call` hardcoded phone — all open.
+- **All 7 logic errors (L1-L7)** — thresholds/bands unchanged (`VOICE_CALL_THRESHOLD`, `RECOMMEND_REVIEW_MIN`, `RULE_MIN_EXPERIENCE_YEARS` untouched); `call_logs` changed only the interval *unit*, not the lifetime-count (L4) or `manual_retry` no-op (L5).
+- **All 9 design issues (DES-01-09)** — no structural change.
+- **23 of 24 features (F2-F24)** — no reaper, admin endpoint, candidate comms, dead-letter, startup config validation, dedup, JD-close, tests/CI, Dockerfile, metrics, or any compliance feature built.
+
+## Scoreboard
+| Bucket | Total | Fixed | Partial | Open |
+|--------|------:|------:|--------:|-----:|
+| Criticals (AUD-C) | 10 | 0 | 0 | 10 (C04 worse) |
+| Majors (AUD-M) | 6 | 0 | 1 (LinkedIn) | 5 |
+| Logic (L) | 7 | 0 | 0 | 7 |
+| Design (DES) | 9 | 0 | 0 | 9 |
+| Features (F) | 24 | 1 (F1) | 0 | 23 |
+
+**Part 4 bottom line:** two weeks of work resolved **the one launch blocker (F1)** and added solid job-post injection guardrails — but **every legal, correctness, and architectural finding is still open**, and the retry-cadence change nudged the spend risk (C04) the wrong way. The audit remains valid against the live code. Priorities are unchanged: **AUD-C01/C02 (legal) → C03 (webhook) → C04 (spend, now with the faster retries) → the reaper/state-of-truth design fixes.**
+
+---
+---
+
 # Part 3 — Feature Backlog (Completeness Count)
 
 Added 2026-06-29. Every distinct *net-new feature* surfaced by the completeness audit (Part 2-C), de-duplicated and counted, with priority + effort. These are **additive features**, not the in-place fixes to existing code (those are the AUD-*/L*/DES-* findings above).
