@@ -11,7 +11,7 @@
 
 | Total | Complete | Open |
 | --- | --- | --- |
-| 31 | 3 | 28 |
+| 31 | 4 | 27 |
 
 _(18 backend audit items · 13 frontend build items)_
 
@@ -46,7 +46,6 @@ _(18 backend audit items · 13 frontend build items)_
 
 | ID | Description | Priority |
 |---|---|---|
-| BL-FE-04 | App shell: sidebar nav (Overview/Job posts/Shortlist/Candidates/Interviews/Meetings) + top bar + React Router routes + theme toggle + API-key/auth handling | HIGH |
 | BL-FE-05 | Overview screen — stat cards, recruitment funnel, screening-call donut (Recharts), "Needs your attention" block; wire to `/call-stats` + pipeline | HIGH |
 | BL-FE-06 | Job posts + criteria editor — list, create (JD generate/review), criteria editor (generate → edit importance → confirm/lock); wire to `/job-posts` + `/jobs/{id}/criteria/*` | HIGH |
 | BL-FE-07 | Shortlist — ranked table (composite, recommendation, red flags), filters, re-rank weights; wire to `/ranked-candidates` + `/rerank` | HIGH |
@@ -66,3 +65,4 @@ _(18 backend audit items · 13 frontend build items)_
 | BL-FE-01 | Scaffold `frontend/` (Vite + React + TS) + design tokens (slate + growth-green, light/dark) + folder structure | HIGH | COMPLETE 2026-07-08 — build + live render verified |
 | BL-FE-02 | SVG `Icon` set + component library (Button, Card*, PageBanner, SectionHeader, Input/TextArea, Select, Table, Badge, AlertBanner, Modal) | HIGH | COMPLETE 2026-07-08 — build + gallery render verified |
 | BL-FE-03 | API layer: `apiFetch()` + Zod schemas/types + typed endpoints + Zustand stores (session, jobs, shortlist, calls) | HIGH | COMPLETE 2026-07-08 — tsc strict verified |
+| BL-FE-04 | App shell: sidebar nav + React Router routes + theme toggle (session store) + placeholder pages | HIGH | COMPLETE 2026-07-08 — build + live render (routing + active nav) verified |

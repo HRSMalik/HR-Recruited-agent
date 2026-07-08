@@ -71,3 +71,25 @@
 .ui-modal__footer{padding:16px 20px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:10px}
 .ui-icon-btn{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:var(--radius-sm);border:none;background:transparent;color:var(--text-muted);cursor:pointer}
 .ui-icon-btn:hover{background:var(--surface-2);color:var(--text)}
+
+/* App shell (BL-FE-04) */
+.app-shell{display:flex;min-height:100vh}
+.side{width:236px;flex-shrink:0;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;padding:20px 14px}
+.side__brand{display:flex;align-items:center;gap:10px;padding:6px 8px 22px}
+.side__brand .sq{width:28px;height:28px;border-radius:8px;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px}
+.side__brand .nm{font-weight:600;font-size:14px}
+.side__brand .nm small{display:block;color:var(--text-muted);font-size:11px;font-weight:500}
+.side__nav{display:flex;flex-direction:column;gap:2px}
+.nav-link{display:flex;align-items:center;gap:11px;padding:8px 10px;border-radius:var(--radius-sm);color:var(--text-2);text-decoration:none;font-size:13.5px;font-weight:500}
+.nav-link svg{width:17px;height:17px;color:var(--text-muted)}
+.nav-link:hover{background:var(--surface-2);color:var(--text)}
+.nav-link.on{background:var(--accent-weak);color:var(--accent-text);font-weight:600}
+.nav-link.on svg{color:var(--accent)}
+.side__foot{margin-top:auto;padding-top:12px;border-top:1px solid var(--border);display:flex;align-items:center;gap:10px}
+.side__foot .av{width:28px;height:28px;border-radius:50%;background:var(--surface-2);border:1px solid var(--border-2);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;color:var(--text-2)}
+.side__foot .who{font-size:12.5px;font-weight:500}
+.side__foot .who small{display:block;color:var(--text-muted);font-size:11px}
+.side__foot .theme{margin-left:auto}
+.app-main{flex:1;min-width:0;display:flex;flex-direction:column}
+.page{padding:24px 32px;display:flex;flex-direction:column;gap:20px;max-width:1220px}
+.page__placeholder{color:var(--text-muted);font-size:13.5px}
