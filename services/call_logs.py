@@ -8,15 +8,16 @@ Persists every attempt to `initial_screening_logs` and schedules a fresh intervi
 invite (new room + new email) for no_show/incomplete candidates.
 """
 import os
+import logging
 import sys
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Tuple
 
 from dotenv import load_dotenv
-from pymongo import MongoClient
 
 import config
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 
@@ -25,16 +26,11 @@ MAX_RETRY_ATTEMPTS = config.MAX_RETRY_ATTEMPTS
 RETRY_INTERVAL_MINUTES = config.RETRY_INTERVAL_MINUTES
 
 
-_DB = None
 
 
 def _get_db():
-    global _DB
-    if _DB is None:
-        uri = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
-        db_name = os.getenv("MONGODB_DB", "recruitment-module")
-        _DB = MongoClient(uri)[db_name]
-    return _DB
+    from services.db import get_db
+    return get_db()
 
 
 def _screening_logs_collection():
@@ -162,10 +158,9 @@ def process_retries(start_interview_fn, screened_collection) -> dict:
             )
 
             retried += 1
-            print(
+            logger.info(
                 f"[retry] new interview invite sent to {cand.get('name')} "
-                f"(attempt {log['attempt_number'] + 1}/{MAX_RETRY_ATTEMPTS})",
-                file=sys.stderr,
+                f"(attempt {log['attempt_number'] + 1}/{MAX_RETRY_ATTEMPTS})"
             )
         except Exception as e:  # noqa: BLE001
             errors.append(f"{log['candidate_id']}: {e!r}")

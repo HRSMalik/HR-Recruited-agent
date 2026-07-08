@@ -1,4 +1,5 @@
 from langchain.chat_models import init_chat_model
+import logging
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langgraph.graph import StateGraph, END
 from langgraph.prebuilt import create_react_agent
@@ -13,22 +14,17 @@ import concurrent.futures
 import sys
 import os
 import sqlite3
-from pymongo import MongoClient
 from dotenv import load_dotenv
+logger = logging.getLogger(__name__)
 load_dotenv()
 
 
-_JOB_DESCRIPTIONS_COLLECTION = None
 
 
 def _get_job_descriptions_collection():
     """Lazily build and cache the MongoDB `job_descriptions` collection handle."""
-    global _JOB_DESCRIPTIONS_COLLECTION
-    if _JOB_DESCRIPTIONS_COLLECTION is None:
-        uri = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
-        db_name = os.getenv("MONGODB_DB", "recruitment-module")
-        _JOB_DESCRIPTIONS_COLLECTION = MongoClient(uri)[db_name]["job_descriptions"]
-    return _JOB_DESCRIPTIONS_COLLECTION
+    from services.db import get_collection
+    return get_collection("job_descriptions")
 
 
 
@@ -98,7 +94,7 @@ def _build_checkpointer():
         saver.setup()
         return saver
     except Exception as e:  # noqa: BLE001
-        print(f"using in-memory saver. SqliteSaver unavailable: {e!r}", file=sys.stderr)
+        logger.warning(f"using in-memory saver. SqliteSaver unavailable: {e!r}")
         return InMemorySaver()
 
 
@@ -126,9 +122,8 @@ def _append_google_form_link(content: str, thread_id: Optional[str] = None) -> s
     else:
         url = base_url
         if not entry_id:
-            print(
-                "WARNING: GOOGLE_FORM_JD_ENTRY_ID not set; form submissions won't be tagged with jd_id.",
-                file=sys.stderr,
+            logger.warning(
+                "GOOGLE_FORM_JD_ENTRY_ID not set; form submissions won't be tagged with jd_id."
             )
 
     if url in content:
@@ -439,8 +434,8 @@ if __name__ == "__main__":
     import sys
 
     def _read_multiline(prompt: str) -> str:
-        print(prompt)
-        print("(Finish by typing a single line with END)")
+        logger.info(prompt)
+        logger.info("(Finish by typing a single line with END)")
         lines: List[str] = []
         while True:
             line = input()
@@ -457,11 +452,11 @@ if __name__ == "__main__":
         generated_post = interrupt_value.get("generated_post")
 
         if message:
-            print(f"\n{message}\n")
+            logger.info(f"\n{message}\n")
         if generated_post:
-            print("--- Generated Job Post (Draft) ---")
-            print(generated_post)
-            print("--- End Draft ---\n")
+            logger.info("--- Generated Job Post (Draft) ---")
+            logger.info(generated_post)
+            logger.info("--- End Draft ---\n")
 
         while True:
             action = input("Action? [a]pprove / [e]dit / [r]egenerate / [q]uit: ").strip().lower()
@@ -475,7 +470,7 @@ if __name__ == "__main__":
                 return {"action": "regenerate", "feedback": feedback}
             if action in {"q", "quit", "exit"}:
                 return None
-            print("Invalid choice. Please enter a/e/r/q.")
+            logger.info("Invalid choice. Please enter a/e/r/q.")
 
     thread_id = str(uuid.uuid4())
     config = {
@@ -514,7 +509,7 @@ if __name__ == "__main__":
             )
 
             if human_feedback is None:
-                print("Aborted by user.")
+                logger.info("Aborted by user.")
                 sys.exit(1)
 
             pending = Command(
@@ -527,8 +522,8 @@ if __name__ == "__main__":
         break
 
 
-    print("\nFINAL JOB POST:\n")
-    print(response["generated_post"])
+    logger.info("\nFINAL JOB POST:\n")
+    logger.info(response["generated_post"])
     # try:
     #     print(agent.get_graph().draw_mermaid())
     # except Exception as e:

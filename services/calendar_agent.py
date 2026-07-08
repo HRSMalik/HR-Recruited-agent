@@ -1,5 +1,6 @@
 """Google Calendar agent: find a free slot, create an interview event with Meet link."""
 import os
+import logging
 import sys
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -12,6 +13,7 @@ from googleapiclient.discovery import build
 from services.parser_agent import _load_google_credentials
 
 import config
+logger = logging.getLogger(__name__)
 
 load_dotenv(Path(__file__).resolve().parent / ".env")
 
@@ -227,4 +229,4 @@ def schedule_interview(candidate_doc: dict, score: int,
 if __name__ == "__main__":
     sys.stdout.reconfigure(encoding="utf-8")
     test_hr = sys.argv[1] if len(sys.argv) > 1 else "filzanoornaeem@gmail.com"
-    print(f"Next available slot for {test_hr}:", find_next_available_slot(test_hr))
+    logger.info(f"Next available slot for {test_hr}:", find_next_available_slot(test_hr))

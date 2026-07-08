@@ -9,6 +9,7 @@ When the candidate ends the call the agent POSTs the full transcript to
 INTERVIEW_CALLBACK_URL so the pipeline can score and continue.
 """
 import asyncio
+import logging
 import io
 import json
 import os
@@ -36,6 +37,7 @@ from livekit.plugins import deepgram as lk_deepgram
 from livekit.plugins import google as lk_google
 from livekit.plugins.turn_detector.english import EnglishModel
 from google.genai import types as genai_types
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 
@@ -320,9 +322,9 @@ async def _post_callback(
                 "live_red_flags": live_red_flags or [],
                 "duration": duration,
             })
-            print(f"[livekit_agent] callback status={resp.status_code} end_reason={end_reason}", file=sys.stderr)
+            logger.warning(f"[livekit_agent] callback status={resp.status_code} end_reason={end_reason}")
     except Exception as e:
-        print(f"[livekit_agent] callback failed: {e!r}", file=sys.stderr)
+        logger.error(f"[livekit_agent] callback failed: {e!r}")
 
 
 def _build_session(candidate_name: str) -> AgentSession:
@@ -447,11 +449,11 @@ async def entrypoint(ctx: JobContext) -> None:
             return
         meeting_ending.set()
         end_reason_holder["code"] = code
-        print(f"[livekit_agent] ending meeting: {reason}", file=sys.stderr)
+        logger.warning(f"[livekit_agent] ending meeting: {reason}")
         try:
             await ctx.delete_room()
         except Exception as e:
-            print(f"[livekit_agent] delete_room failed: {e!r}", file=sys.stderr)
+            logger.error(f"[livekit_agent] delete_room failed: {e!r}")
         done.set()
 
     async def _delayed_end(reason: str, code: str, delay: float) -> None:
@@ -513,10 +515,9 @@ async def entrypoint(ctx: JobContext) -> None:
                 continue
             if reprompt_count < _MAX_REPROMPTS:
                 reprompt_count += 1
-                print(
+                logger.warning(
                     f"[livekit_agent] candidate silent for {_REPROMPT_SILENCE_TIMEOUT}s, "
-                    f"re-prompting (attempt {reprompt_count}/{_MAX_REPROMPTS})",
-                    file=sys.stderr,
+                    f"re-prompting (attempt {reprompt_count}/{_MAX_REPROMPTS})"
                 )
                 reprompt_instructions = (
                     "The candidate has gone quiet and hasn't answered your last question yet. "
@@ -533,12 +534,12 @@ async def entrypoint(ctx: JobContext) -> None:
                     # Realtime API calls occasionally time out server-side; one quick
                     # retry avoids silently stranding the candidate for a full timeout
                     # window on a transient hiccup.
-                    print(f"[livekit_agent] reprompt failed, retrying once: {e!r}", file=sys.stderr)
+                    logger.error(f"[livekit_agent] reprompt failed, retrying once: {e!r}")
                     await asyncio.sleep(2.0)
                     try:
                         await session.generate_reply(instructions=reprompt_instructions)
                     except Exception as e2:
-                        print(f"[livekit_agent] reprompt retry also failed: {e2!r}", file=sys.stderr)
+                        logger.error(f"[livekit_agent] reprompt retry also failed: {e2!r}")
             else:
                 # Exhausted re-prompts and still no response — end the call rather
                 # than waiting indefinitely or letting the model free-wheel.
@@ -593,7 +594,7 @@ async def entrypoint(ctx: JobContext) -> None:
         # Let AEC warmup finish before greeting so its spurious empty turn is
         # consumed (and rejected as noise) before we ask the first question.
         await asyncio.sleep(_GREETING_DELAY)
-        print(f"[livekit_agent] participant joined — sending welcome greeting", file=sys.stderr)
+        logger.warning(f"[livekit_agent] participant joined — sending welcome greeting")
         await session.generate_reply(
             instructions=(
                 "The candidate just joined. Greet them warmly and naturally — say something like: "
@@ -605,7 +606,7 @@ async def entrypoint(ctx: JobContext) -> None:
             )
         )
     except asyncio.TimeoutError:
-        print("[livekit_agent] no participant joined within 120s, exiting", file=sys.stderr)
+        logger.warning("[livekit_agent] no participant joined within 120s, exiting")
         await _post_callback(cv_id, jd_id, ctx.room.name, "", "no_show", 0)
         return
 
@@ -614,7 +615,7 @@ async def entrypoint(ctx: JobContext) -> None:
     try:
         await asyncio.wait_for(done.wait(), timeout=_MAX_DURATION)
     except asyncio.TimeoutError:
-        print(f"[livekit_agent] interview timed out after {_MAX_DURATION}s", file=sys.stderr)
+        logger.warning(f"[livekit_agent] interview timed out after {_MAX_DURATION}s")
         end_reason_holder["code"] = "timeout"
     finally:
         reprompt_task.cancel()
@@ -627,7 +628,7 @@ async def entrypoint(ctx: JobContext) -> None:
         events += [(ts, "Candidate", t) for ts, t in candidate_statements]
         events.sort(key=lambda e: e[0])
         transcript_parts = [f"{role}: {text}" for _, role, text in events]
-        print(f"[livekit_agent] tool transcript: {len(candidate_statements)} candidate statements", file=sys.stderr)
+        logger.warning(f"[livekit_agent] tool transcript: {len(candidate_statements)} candidate statements")
     elif use_batch and candidate_pcm and capture_start["t"] is not None:
         # Batch-transcribe the recorded candidate audio (accurate) and merge with
         # the agent's clean turns, ordered chronologically.
@@ -638,9 +639,9 @@ async def entrypoint(ctx: JobContext) -> None:
             events += [(capture_start["t"] + u["start"], "Candidate", u["text"]) for u in utterances]
             events.sort(key=lambda e: e[0])
             transcript_parts = [f"{role}: {text}" for _, role, text in events]
-            print(f"[livekit_agent] batch transcript: {len(utterances)} candidate utterances", file=sys.stderr)
+            logger.warning(f"[livekit_agent] batch transcript: {len(utterances)} candidate utterances")
         except Exception as e:
-            print(f"[livekit_agent] batch transcription failed, falling back: {e!r}", file=sys.stderr)
+            logger.error(f"[livekit_agent] batch transcription failed, falling back: {e!r}")
     elif not use_split:
         # Cascade mode: supplement with chat history in case events missed anything.
         try:
@@ -659,7 +660,7 @@ async def entrypoint(ctx: JobContext) -> None:
             pass
 
     transcript = "\n".join(transcript_parts)
-    print(f"[livekit_agent] interview ended. transcript lines={len(transcript_parts)}", file=sys.stderr)
+    logger.warning(f"[livekit_agent] interview ended. transcript lines={len(transcript_parts)}")
 
     # Always save a local copy so it's viewable even for test calls the pipeline drops.
     try:
@@ -667,9 +668,9 @@ async def entrypoint(ctx: JobContext) -> None:
         path = os.path.join(_TRANSCRIPT_DIR, f"{ctx.room.name}.txt")
         with open(path, "w") as f:
             f.write(transcript)
-        print(f"[livekit_agent] transcript saved to {path}", file=sys.stderr)
+        logger.warning(f"[livekit_agent] transcript saved to {path}")
     except Exception as e:
-        print(f"[livekit_agent] failed to save transcript file: {e!r}", file=sys.stderr)
+        logger.error(f"[livekit_agent] failed to save transcript file: {e!r}")
 
     await _post_callback(
         cv_id, jd_id, ctx.room.name, transcript, end_reason_holder["code"], duration,

@@ -8,6 +8,7 @@ persist and resume the graph across the async interview/booking interrupts.
 This ticket only defines the state shape — nodes/graph come in later tickets.
 """
 import os
+import logging
 import sqlite3
 import sys
 
@@ -18,6 +19,7 @@ import config
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import interrupt
+logger = logging.getLogger(__name__)
 
 
 class PipelineState(TypedDict, total=False):
@@ -98,7 +100,7 @@ def _build_checkpointer():
         saver.setup()
         return saver
     except Exception as e:  # noqa: BLE001
-        print(f"using in-memory saver. SqliteSaver unavailable: {e!r}", file=sys.stderr)
+        logger.warning(f"using in-memory saver. SqliteSaver unavailable: {e!r}")
         return InMemorySaver()
 
 
@@ -433,14 +435,14 @@ if __name__ == "__main__":
     assert restored["cv_id"] == "cv-123"
     assert restored["composite_score"] == 76.8
     assert restored["stage"] == STAGE_PARSE
-    print("[ok] PipelineState is JSON-serialisable")
-    print("[ok] fields:", sorted(state.keys()))
+    logger.info("[ok] PipelineState is JSON-serialisable")
+    logger.info("[ok] fields:", sorted(state.keys()))
 
     # Graph factory: compiles with a checkpointer.
     agent = create_pipeline_agent()
     assert agent is not None
     assert agent.checkpointer is not None
-    print(f"[ok] pipeline agent compiled (checkpointer={type(_checkpointer).__name__})")
+    logger.info(f"[ok] pipeline agent compiled (checkpointer={type(_checkpointer).__name__})")
 
     # parse_cv node: monkeypatch process_cv so no real PDF/LLM is needed.
     from services import parser_agent
@@ -547,10 +549,10 @@ if __name__ == "__main__":
     cfg_high = {"configurable": {"thread_id": f"t-{uuid.uuid4()}"}}
     agent.invoke(launch, cfg_high)
     assert _captured["u"]["$set"]["fit_percent"] == 75
-    print("[ok] parse_cv + match (fit=75) mirror fit_percent to candidates_info")
+    logger.info("[ok] parse_cv + match (fit=75) mirror fit_percent to candidates_info")
     assert _livekit_rooms.get("cv_id") == "cv-parsed-1", "LiveKit room should have been created"
     assert agent.get_state(cfg_high).next, "graph should be paused at the interview interrupt"
-    print("[ok] start_interview creates LiveKit room and suspends at interrupt")
+    logger.info("[ok] start_interview creates LiveKit room and suspends at interrupt")
 
     resume_payload = Command(resume={
         "transcript": "I use Python and FastAPI", "summary": "strong",
@@ -565,12 +567,12 @@ if __name__ == "__main__":
     assert _scr["interview_score"] == 82
     assert _scr["composite_score"] is not None and _scr["recommendation"] is not None
     assert _insights_coll.find_one({"_id": "cv-parsed-1"})["key_strengths"] == ["FastAPI"]
-    print("[ok] score_interview: categorise + score + composite/recommendation + insights persisted")
+    logger.info("[ok] score_interview: categorise + score + composite/recommendation + insights persisted")
 
     # route_after_interview branch 1: completed + score(82) >= 60 -> book -> INTERRUPT.
     assert _booked["cv_id"] == "cv-parsed-1" and _booked["score"] == 82
     assert agent.get_state(cfg_high).next == ("book",)
-    print("[ok] route_after_interview: high score -> book emails picker + suspends at interrupt")
+    logger.info("[ok] route_after_interview: high score -> book emails picker + suspends at interrupt")
 
     # Resume booking (slot picked) -> book -> create_event -> rank -> END.
     booked = agent.invoke(Command(resume={
@@ -578,13 +580,13 @@ if __name__ == "__main__":
     }), cfg_high)
     assert booked["booking_token"] == "tok-1"
     assert booked["meet_link"] == "https://meet.google.com/xyz"
-    print("[ok] book resume: slot + meet link land in state")
+    logger.info("[ok] book resume: slot + meet link land in state")
     # rank terminal node ran: composite + recommendation in state, status completed.
     assert "cv-parsed-1" in _ranked_calls
     assert booked["composite_score"] == 78.5 and booked["recommendation"] == "yes"
     assert booked["status"] == STATUS_COMPLETED and booked["stage"] == STAGE_RANK
     assert not agent.get_state(cfg_high).next, "graph should have reached END"
-    print("[ok] rank terminal: rank_candidate persisted, status=completed, reached END")
+    logger.info("[ok] rank terminal: rank_candidate persisted, status=completed, reached END")
 
     def _run_to_interview(thread):
         cfg = {"configurable": {"thread_id": thread}}
@@ -597,7 +599,7 @@ if __name__ == "__main__":
     r2 = agent.invoke(resume_payload, cfg2)
     assert r2["interview_score"] == 40 and r2["stage"] == STAGE_RANK
     assert r2["status"] == STATUS_COMPLETED and r2["recommendation"] == "yes"
-    print("[ok] route_after_interview: completed + low score -> rank -> completed")
+    logger.info("[ok] route_after_interview: completed + low score -> rank -> completed")
 
     # Branch 3: no_show + retriable -> wait_retry (PAUSE); retry resume -> no_show
     # again -> attempts exhausted -> reject (rejected_interview).
@@ -608,13 +610,13 @@ if __name__ == "__main__":
     r3 = agent.invoke(resume_payload, cfg3)          # attempt 1 -> pending_retry
     assert agent.get_state(cfg3).next == ("wait_retry",), agent.get_state(cfg3).next
     assert r3["call_log_status"] == "pending_retry"
-    print("[ok] route_after_interview: no_show + retriable -> wait_retry (paused for a fresh invite)")
+    logger.info("[ok] route_after_interview: no_show + retriable -> wait_retry (paused for a fresh invite)")
 
     r3b = agent.invoke(resume_payload, cfg3)         # retry webhook -> attempt 2 -> exhausted
     assert r3b["call_category"] == "no_show" and r3b["call_log_status"] == "exhausted"
     assert r3b["status"] == STATUS_REJECTED_INTERVIEW
     assert not agent.get_state(cfg3).next, "graph should reach END after retries exhausted"
-    print("[ok] wait_retry resume -> no_show again -> exhausted -> reject (rejected_interview)")
+    logger.info("[ok] wait_retry resume -> no_show again -> exhausted -> reject (rejected_interview)")
 
     # restore completed categorisation for any later assertions
     call_logs.categorize_call = lambda end_reason: ("completed", "ok")
@@ -623,5 +625,5 @@ if __name__ == "__main__":
     shortlisting_agent._score_candidate = lambda candidate, criteria, jd_text="": {**_mock_payload, "fit_percent": 40}
     low = agent.invoke(launch, {"configurable": {"thread_id": f"t-{uuid.uuid4()}"}})
     assert low["fit_percent"] == 40 and low["status"] == STATUS_REJECTED_CV
-    print("[ok] route_after_match: low fit -> reject (status=rejected_cv)")
-    print("All pipeline self-tests passed.")
+    logger.info("[ok] route_after_match: low fit -> reject (status=rejected_cv)")
+    logger.info("All pipeline self-tests passed.")

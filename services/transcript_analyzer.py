@@ -1,11 +1,13 @@
 """Extract structured insights from a voice-screening transcript using gpt-4o-mini."""
 import json
+import logging
 import re
 import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
 from langchain.chat_models import init_chat_model
+logger = logging.getLogger(__name__)
 
 load_dotenv(Path(__file__).resolve().parent / ".env")
 
@@ -87,10 +89,10 @@ def extract_interview_insights(transcript: str) -> dict:
         data = json.loads(raw)
         return _validate(data)
     except json.JSONDecodeError as e:
-        print(f"[transcript_analyzer] JSON parse failed: {e}", file=sys.stderr)
+        logger.error(f"[transcript_analyzer] JSON parse failed: {e}")
         return {"extraction_failed": True, "error": f"json_decode: {e}", "raw_response": raw[:500]}
     except Exception as e:
-        print(f"[transcript_analyzer] extraction failed: {e}", file=sys.stderr)
+        logger.error(f"[transcript_analyzer] extraction failed: {e}")
         return {"extraction_failed": True, "error": str(e)}
 
 
@@ -98,4 +100,4 @@ if __name__ == "__main__":
     sys.stdout.reconfigure(encoding="utf-8")
     sample = sys.stdin.read() if not sys.stdin.isatty() else "AI: tell me about yourself.\nUser: I am Ali, 3 years experience, AI Engineer."
     result = extract_interview_insights(sample)
-    print(json.dumps(result, indent=2, ensure_ascii=False))
+    logger.info(json.dumps(result, indent=2, ensure_ascii=False))

@@ -31,6 +31,8 @@ from services.booking_agent import get_booking, select_slot
 from typing import Optional
 from datetime import datetime, timezone
 import uuid
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+logger = logging.getLogger(__name__)
 
 
 def _launch_pipeline_for_applicant(applicant: dict) -> Optional[str]:
@@ -64,7 +66,7 @@ async def _shortlist_loop(interval_seconds: int):
             await asyncio.sleep(interval_seconds)
             with tempfile.TemporaryDirectory() as tmp_dir:
                 new_applicants = await asyncio.to_thread(detect_new_applicants, tmp_dir)
-                print(f"[pipeline] tick: {len(new_applicants)} new applicant(s)", file=sys.stderr)
+                logger.warning(f"[pipeline] tick: {len(new_applicants)} new applicant(s)")
                 for applicant in new_applicants:
                     try:
                         cv_id = await asyncio.to_thread(_launch_pipeline_for_applicant, applicant)
@@ -72,13 +74,13 @@ async def _shortlist_loop(interval_seconds: int):
                             await asyncio.to_thread(
                                 mark_processed, applicant["file_id"], applicant["jd_id"], cv_id
                             )
-                            print(f"[pipeline] launched cv_id={cv_id} jd={applicant['jd_id']}", file=sys.stderr)
+                            logger.warning(f"[pipeline] launched cv_id={cv_id} jd={applicant['jd_id']}")
                     except Exception as e:  # noqa: BLE001
-                        print(f"[pipeline] launch error file_id={applicant['file_id']}: {e!r}", file=sys.stderr)
+                        logger.error(f"[pipeline] launch error file_id={applicant['file_id']}: {e!r}")
         except asyncio.CancelledError:
             raise
         except Exception as e:  # noqa: BLE001
-            print(f"[scheduler] error: {e!r}", file=sys.stderr)
+            logger.error(f"[scheduler] error: {e!r}")
 
 
 def _retry_start_interview(cand: dict):
@@ -104,11 +106,11 @@ async def _retry_loop(interval_seconds: int = 60):
             await asyncio.sleep(interval_seconds)
             result = await asyncio.to_thread(process_retries, _retry_start_interview, _screened())
             if result["retried"] or result["errors"]:
-                print(f"[retry] tick: {result}", file=sys.stderr)
+                logger.warning(f"[retry] tick: {result}")
         except asyncio.CancelledError:
             raise
         except Exception as e:  # noqa: BLE001
-            print(f"[retry] error: {e!r}", file=sys.stderr)
+            logger.error(f"[retry] error: {e!r}")
 
 
 async def _reminder_loop(interval_seconds: int):
@@ -124,11 +126,11 @@ async def _reminder_loop(interval_seconds: int):
             await asyncio.sleep(interval_seconds)
             result = await asyncio.to_thread(send_due_reminders)
             if result["sent"] or result["errors"]:
-                print(f"[reminder] tick: {result}", file=sys.stderr)
+                logger.warning(f"[reminder] tick: {result}")
         except asyncio.CancelledError:
             raise
         except Exception as e:  # noqa: BLE001
-            print(f"[reminder] error: {e!r}", file=sys.stderr)
+            logger.error(f"[reminder] error: {e!r}")
 
 
 @asynccontextmanager
@@ -143,9 +145,9 @@ async def lifespan(app: FastAPI):
     shortlist_task = asyncio.create_task(_shortlist_loop(interval))
     retry_task = asyncio.create_task(_retry_loop(retry_interval)) if auto_retry else None
     reminder_task = asyncio.create_task(_reminder_loop(reminder_interval))
-    print(f"[shortlist] scheduler started; interval={interval}s", file=sys.stderr)
-    print(f"[retry] scheduler {'started; interval=' + str(retry_interval) + 's' if auto_retry else 'DISABLED (ENABLE_AUTO_RETRY=false)'}", file=sys.stderr)
-    print(f"[reminder] scheduler started; interval={reminder_interval}s", file=sys.stderr)
+    logger.warning(f"[shortlist] scheduler started; interval={interval}s")
+    logger.warning(f"[retry] scheduler {'started; interval=' + str(retry_interval) + 's' if auto_retry else 'DISABLED (ENABLE_AUTO_RETRY=false)'}")
+    logger.warning(f"[reminder] scheduler started; interval={reminder_interval}s")
     try:
         yield
     finally:
@@ -226,7 +228,7 @@ async def _security_headers(request, call_next):
 async def _mongo_unavailable_handler(request, exc):
     # Any unhandled MongoDB failure (e.g. server unreachable) -> a clean,
     # actionable 503 instead of an opaque 500. No internal detail is leaked.
-    print(f"[db] {request.url.path} -> {type(exc).__name__}: {exc}", file=sys.stderr)
+    logger.error(f"[db] {request.url.path} -> {type(exc).__name__}: {exc}")
     return JSONResponse(status_code=503, content={"detail": "database unavailable"})
 
 # Compile once per process so InMemorySaver can keep thread state.
@@ -1441,7 +1443,7 @@ async def confirm_job_criteria(jd_id: str):
     except Exception as e:  # noqa: BLE001
         doc["linkedin_posted"] = False
         doc["linkedin_error"] = str(e)
-        print(f"[linkedin] publish failed for jd_id={jd_id}: {e!r}", file=sys.stderr)
+        logger.error(f"[linkedin] publish failed for jd_id={jd_id}: {e!r}")
 
     return doc
 

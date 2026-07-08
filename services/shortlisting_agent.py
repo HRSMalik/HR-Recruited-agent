@@ -1,15 +1,15 @@
 import os
+import logging
 import re
 from typing import List
 from langchain.chat_models import init_chat_model
-from pymongo import MongoClient
 from dotenv import load_dotenv
 
 from utils.schemas import CriteriaScoringResult, ProfessionalScoringResult
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 
-_DB = None
 _IMPORTANCE_WEIGHTS = {
     "must_have": 4,
     "very_important": 3,
@@ -20,12 +20,8 @@ _MAX_CV_CHARS = 3000
 
 
 def _get_db():
-    global _DB
-    if _DB is None:
-        uri = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
-        db_name = os.getenv("MONGODB_DB", "recruitment-module")
-        _DB = MongoClient(uri)[db_name]
-    return _DB
+    from services.db import get_db
+    return get_db()
 
 
 def _candidates():
@@ -196,35 +192,35 @@ def _print_breakdown(
     total: int,
     is_senior: bool,
 ):
-    print("=== Technical Criteria (70%) ===")
+    logger.info("=== Technical Criteria (70%) ===")
     for cs in tech.scores:
-        print(f"  {cs.criterion_name}: {cs.score}/10 | {cs.evidence}")
+        logger.info(f"  {cs.criterion_name}: {cs.score}/10 | {cs.evidence}")
 
     dp = prof.document_professionalism
     pp = prof.professional_profile
     rf = prof.red_flags
 
-    print("=== Document Professionalism (20%) ===")
-    print(f"  Attention to Detail:  {dp.attention_to_detail}/10 | {dp.attention_evidence}")
-    print(f"  Clarity & Completion: {dp.clarity_completion}/10 | {dp.clarity_evidence}")
+    logger.info("=== Document Professionalism (20%) ===")
+    logger.info(f"  Attention to Detail:  {dp.attention_to_detail}/10 | {dp.attention_evidence}")
+    logger.info(f"  Clarity & Completion: {dp.clarity_completion}/10 | {dp.clarity_evidence}")
 
-    print("=== Professional Profile ===")
-    print(f"  Strategic Focus:          {pp.strategic_focus}/10 | {pp.strategic_evidence}")
-    print(f"  Intellectual Ability:     {pp.intellectual_ability}/10 | {pp.intellectual_evidence}")
+    logger.info("=== Professional Profile ===")
+    logger.info(f"  Strategic Focus:          {pp.strategic_focus}/10 | {pp.strategic_evidence}")
+    logger.info(f"  Intellectual Ability:     {pp.intellectual_ability}/10 | {pp.intellectual_evidence}")
     counted_note = "" if is_senior else " (not counted — non-senior role)"
-    print(f"  Managerial Experience:    {pp.managerial_experience}/10{counted_note} | {pp.managerial_evidence}")
-    print(f"  Recognized Achievements:  {pp.recognized_accomplishments}/10 | {pp.accomplishments_evidence}")
-    print(f"  Critical Thinking:        {pp.critical_thinking}/10 | {pp.critical_thinking_evidence}")
+    logger.info(f"  Managerial Experience:    {pp.managerial_experience}/10{counted_note} | {pp.managerial_evidence}")
+    logger.info(f"  Recognized Achievements:  {pp.recognized_accomplishments}/10 | {pp.accomplishments_evidence}")
+    logger.info(f"  Critical Thinking:        {pp.critical_thinking}/10 | {pp.critical_thinking_evidence}")
 
-    print("=== Experience (10%) ===")
-    print(f"  Candidate: {candidate_years} yrs | Required: {required_years} yrs | Score: {experience_score}/10")
+    logger.info("=== Experience (10%) ===")
+    logger.info(f"  Candidate: {candidate_years} yrs | Required: {required_years} yrs | Score: {experience_score}/10")
 
-    print("=== Red Flags ===")
-    print(f"  Timeline/Tenure:             {rf.timeline_tenure} | {rf.timeline_evidence}")
-    print(f"  Experience Misrepresentation:{rf.experience_misrepresentation} | {rf.representation_evidence}")
-    print(f"  Unprofessional Email:        {rf.unprofessional_email}")
+    logger.info("=== Red Flags ===")
+    logger.info(f"  Timeline/Tenure:             {rf.timeline_tenure} | {rf.timeline_evidence}")
+    logger.info(f"  Experience Misrepresentation:{rf.experience_misrepresentation} | {rf.representation_evidence}")
+    logger.info(f"  Unprofessional Email:        {rf.unprofessional_email}")
 
-    print(f"=== Final Score: {total}/100 ===")
+    logger.info(f"=== Final Score: {total}/100 ===")
 
 
 def _build_score_payload(
@@ -310,7 +306,7 @@ def shortlist_all_jobs() -> dict:
 if __name__ == "__main__":
     import sys
     if len(sys.argv) < 2:
-        print("Usage: python shortlisting_agent.py <jd_id>")
+        logger.info("Usage: python shortlisting_agent.py <jd_id>")
         sys.exit(1)
     for r in shortlist_for_jd(sys.argv[1]):
-        print(f"{r['fit_percent']:3d}%  cv_id={r['_id']}")
+        logger.info(f"{r['fit_percent']:3d}%  cv_id={r['_id']}")

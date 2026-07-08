@@ -1,4 +1,5 @@
 from langchain.chat_models import init_chat_model
+import logging
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langgraph.graph import StateGraph, END
 from langgraph.prebuilt import create_react_agent
@@ -22,33 +23,23 @@ from google.auth.transport.requests import Request
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
-from pymongo import MongoClient
 from dotenv import load_dotenv
+logger = logging.getLogger(__name__)
 load_dotenv()
 
 
-_MONGO_COLLECTION = None
-_PROCESSED_COLLECTION = None
 
 
 def _get_candidates_collection():
     """Lazily build and cache the MongoDB `candidates_info` collection handle."""
-    global _MONGO_COLLECTION
-    if _MONGO_COLLECTION is None:
-        uri = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
-        db_name = os.getenv("MONGODB_DB", "recruitment-module")
-        _MONGO_COLLECTION = MongoClient(uri)[db_name]["candidates_info"]
-    return _MONGO_COLLECTION
+    from services.db import get_collection
+    return get_collection("candidates_info")
 
 
 def _get_processed_collection():
     """Tracks already-ingested Drive file IDs so re-runs don't re-parse the same CV."""
-    global _PROCESSED_COLLECTION
-    if _PROCESSED_COLLECTION is None:
-        uri = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
-        db_name = os.getenv("MONGODB_DB", "recruitment-module")
-        _PROCESSED_COLLECTION = MongoClient(uri)[db_name]["processed_applications"]
-    return _PROCESSED_COLLECTION
+    from services.db import get_collection
+    return get_collection("processed_applications")
 
 
 _GOOGLE_SCOPES = [
@@ -65,7 +56,7 @@ _FILE_ID_RE = re.compile(r"[?&]id=([a-zA-Z0-9_-]+)|/d/([a-zA-Z0-9_-]+)")
 def _authorize_or_raise(reason: str):
     """Run the OAuth flow if we have a TTY; otherwise raise a clear error."""
     if sys.stdin.isatty():
-        print(f"{reason}; launching authorization flow...", file=sys.stderr)
+        logger.warning(f"{reason}; launching authorization flow...")
         authorize()
     else:
         raise RuntimeError(
@@ -116,10 +107,10 @@ def authorize():
     if os.path.exists(_GOOGLE_TOKEN_PATH):
         existing = Credentials.from_authorized_user_file(_GOOGLE_TOKEN_PATH, _GOOGLE_SCOPES)
         if set(existing.scopes or []) != set(_GOOGLE_SCOPES):
-            print("Existing token has different scopes; re-authorizing...")
+            logger.info("Existing token has different scopes; re-authorizing...")
             os.remove(_GOOGLE_TOKEN_PATH)
         else:
-            print(f"Token already at {_GOOGLE_TOKEN_PATH} with correct scopes. Nothing to do.")
+            logger.info(f"Token already at {_GOOGLE_TOKEN_PATH} with correct scopes. Nothing to do.")
             return
 
     flow = InstalledAppFlow.from_client_secrets_file(_GOOGLE_CREDS_PATH, _GOOGLE_SCOPES)
@@ -131,7 +122,7 @@ def authorize():
     os.makedirs(os.path.dirname(_GOOGLE_TOKEN_PATH), exist_ok=True)
     with open(_GOOGLE_TOKEN_PATH, "w") as f:
         f.write(creds.to_json())
-    print(f"Saved token to {_GOOGLE_TOKEN_PATH}")
+    logger.info(f"Saved token to {_GOOGLE_TOKEN_PATH}")
 
 
 def _read_sheet_rows(sheets_service, spreadsheet_id: str, sheet_name: str) -> List[dict]:
@@ -239,7 +230,7 @@ def extract_text_from_pdf(pdf_path: str, work_dir: str) -> str:
                 extracted_text += response.choices[0].message.content.strip() + "\n"
         return extracted_text
     except Exception as e:
-        print(f"Error extracting text from image: {e}")
+        logger.info(f"Error extracting text from image: {e}")
         return ""
     
 
@@ -425,8 +416,8 @@ def detect_new_applicants(dest_dir: str) -> list[dict]:
             fileId=file_id, fields="mimeType,name", supportsAllDrives=True
         ).execute()
         if meta.get("mimeType") != "application/pdf":
-            print(f"[ingest] skipping non-PDF upload {meta.get('name')!r} "
-                  f"({meta.get('mimeType')}) file_id={file_id}", file=sys.stderr)
+            logger.warning(f"[ingest] skipping non-PDF upload {meta.get('name')!r} "
+                  f"({meta.get('mimeType')}) file_id={file_id}")
             mark_processed(file_id, jd_id, status="skipped_not_pdf")
             continue
 
@@ -480,7 +471,7 @@ if __name__ == "__main__":
     if cmd == "auth":
         authorize()
     elif cmd == "ingest":
-        print(ingest_new_applicants(), file=_sys.stderr)
+        logger.warning(ingest_new_applicants())
     else:
         result = process_cv("syedali.pdf")
-        print(result)
+        logger.info(result)

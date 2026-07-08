@@ -16,6 +16,7 @@ Local dev setup:
     uvicorn app:app --reload      # terminal 3
 """
 import asyncio
+import logging
 import json
 import os
 import re
@@ -26,10 +27,10 @@ from typing import Optional
 
 from langchain.chat_models import init_chat_model
 from utils.schemas import InterviewEvaluation
-from pymongo import MongoClient
 from dotenv import load_dotenv
 
 import config
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 
@@ -39,16 +40,11 @@ _LIVEKIT_KEY = os.getenv("LIVEKIT_API_KEY", "devkey")
 _LIVEKIT_SECRET = os.getenv("LIVEKIT_API_SECRET", "secret")
 
 
-_DB = None
 
 
 def _get_db():
-    global _DB
-    if _DB is None:
-        uri = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
-        db_name = os.getenv("MONGODB_DB", "recruitment-module")
-        _DB = MongoClient(uri)[db_name]
-    return _DB
+    from services.db import get_db
+    return get_db()
 
 
 def _candidates():
@@ -233,7 +229,7 @@ def _start_livekit_interview(state: dict, pipeline_config: Optional[dict] = None
     try:
         asyncio.run(_create_livekit_room(room_name, meta))
     except Exception as e:
-        print(f"[livekit] room creation failed: {e!r}", file=sys.stderr)
+        logger.error(f"[livekit] room creation failed: {e!r}")
         return None
 
     token = _gen_candidate_token(room_name, candidate_name)
@@ -266,9 +262,9 @@ def _start_livekit_interview(state: dict, pipeline_config: Optional[dict] = None
                 html_body=_interview_invite_html(candidate_name, url),
             )
         except Exception as e:
-            print(f"[livekit] email failed for {email}: {e!r}", file=sys.stderr)
+            logger.error(f"[livekit] email failed for {email}: {e!r}")
 
-    print(f"[livekit] room={room_name} created for cv_id={cv_id}", file=sys.stderr)
+    logger.warning(f"[livekit] room={room_name} created for cv_id={cv_id}")
     return room_name
 
 
@@ -352,12 +348,12 @@ GUIDELINES:
     evaluation: InterviewEvaluation = llm.with_structured_output(InterviewEvaluation).invoke(prompt)
 
     score = _calculate_interview_score(evaluation)
-    print(f"Skill:       {evaluation.skill_match}/2  | {evaluation.skill_evidence}")
-    print(f"Experience:  {evaluation.experience_fit}/1  | {evaluation.experience_evidence}")
-    print(f"Clarity:     {evaluation.communication_clarity}/1")
-    print(f"Engagement:  {evaluation.engagement_motivation}/1")
-    print(f"Red flags:   {evaluation.red_flags}")
-    print(f"Score: {score}/100")
+    logger.info(f"Skill:       {evaluation.skill_match}/2  | {evaluation.skill_evidence}")
+    logger.info(f"Experience:  {evaluation.experience_fit}/1  | {evaluation.experience_evidence}")
+    logger.info(f"Clarity:     {evaluation.communication_clarity}/1")
+    logger.info(f"Engagement:  {evaluation.engagement_motivation}/1")
+    logger.info(f"Red flags:   {evaluation.red_flags}")
+    logger.info(f"Score: {score}/100")
     return {"score": score, "red_flags": evaluation.red_flags}
 
 
@@ -457,7 +453,7 @@ def score_and_persist_call(
             })
             _insights_collection().replace_one({"_id": cv_id}, insights, upsert=True)
         except Exception as e:  # noqa: BLE001
-            print(f"[insights] extraction failed for call_id={call_id}: {e!r}", file=sys.stderr)
+            logger.error(f"[insights] extraction failed for call_id={call_id}: {e!r}")
 
     return {
         "category": category, "reason_label": reason_label,
@@ -484,16 +480,15 @@ def record_call_result(
     """
     doc = _screened().find_one({"call_id": call_id})
     if not doc:
-        print(f"[vapi] webhook for unknown call_id={call_id}", file=sys.stderr)
+        logger.warning(f"[vapi] webhook for unknown call_id={call_id}")
         return
 
     result = score_and_persist_call(doc, transcript, summary, end_reason, duration, tone, live_red_flags)
 
     if result["category"] != "completed":
-        print(
+        logger.info(
             f"[vapi] call {call_id} categorized as {result['category']} "
-            f"({result['reason_label']}). Skipping booking + ranking.",
-            file=sys.stderr,
+            f"({result['reason_label']}). Skipping booking + ranking."
         )
         return
 
@@ -503,12 +498,12 @@ def record_call_result(
         try:
             from services.booking_agent import create_slot_picker_booking
             token = create_slot_picker_booking(doc, interview_score)
-            print(f"[booking] slot picker {'emailed' if token else 'NOT created'} for {doc.get('name')}", file=sys.stderr)
+            logger.warning(f"[booking] slot picker {'emailed' if token else 'NOT created'} for {doc.get('name')}")
         except Exception as e:  # noqa: BLE001
-            print(f"[booking] slot picker failed for call_id={call_id}: {e!r}", file=sys.stderr)
+            logger.error(f"[booking] slot picker failed for call_id={call_id}: {e!r}")
     else:
         reason = "low_score" if interview_score < threshold else "missing_email"
-        print(f"[booking] skipped for {doc.get('name')}: score={interview_score} reason={reason}", file=sys.stderr)
+        logger.warning(f"[booking] skipped for {doc.get('name')}: score={interview_score} reason={reason}")
 
     # Persist the ranked record so legacy candidates also land in ranked_candidates
     # (parity with the pipeline's rank node — previously missing here).
@@ -516,8 +511,8 @@ def record_call_result(
         from services.ranking_agent import rank_candidate
         rank_candidate(doc["_id"])
     except Exception as e:  # noqa: BLE001
-        print(f"[rank] failed for cv_id={doc['_id']}: {e!r}", file=sys.stderr)
+        logger.error(f"[rank] failed for cv_id={doc['_id']}: {e!r}")
 
 
 if __name__ == "__main__":
-    print("voice_agent: use livekit_agent.py for interview agent", file=sys.stderr)
+    logger.warning("voice_agent: use livekit_agent.py for interview agent")

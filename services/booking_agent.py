@@ -7,6 +7,7 @@ Once the candidate picks a slot, a real calendar event with Google Meet is
 created (reusing `calendar_agent`) and the booking is marked `booked`.
 """
 import html
+import logging
 import os
 import sys
 import uuid
@@ -16,25 +17,20 @@ from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 from googleapiclient.discovery import build
-from pymongo import MongoClient
 
 from services.parser_agent import _load_google_credentials
 
 import config
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 
 
-_DB = None
 
 
 def _get_db():
-    global _DB
-    if _DB is None:
-        uri = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
-        db_name = os.getenv("MONGODB_DB", "recruitment-module")
-        _DB = MongoClient(uri)[db_name]
-    return _DB
+    from services.db import get_db
+    return get_db()
 
 
 def _bookings():
@@ -207,18 +203,18 @@ def create_slot_picker_booking(candidate_doc: dict, score: int) -> Optional[str]
     cfg = _cfg()
     email = candidate_doc.get("email")
     if not email:
-        print(f"[booking] candidate {candidate_doc.get('_id')} has no email; skipping", file=sys.stderr)
+        logger.warning(f"[booking] candidate {candidate_doc.get('_id')} has no email; skipping")
         return None
 
     job = _jobs().find_one({"_id": candidate_doc.get("jd_id")})
     if not job or not job.get("primary_hr_email"):
-        print(f"[booking] job {candidate_doc.get('jd_id')} missing primary_hr_email", file=sys.stderr)
+        logger.warning(f"[booking] job {candidate_doc.get('jd_id')} missing primary_hr_email")
         return None
 
     primary_hr = job["primary_hr_email"]
     slots = generate_available_slots(primary_hr)
     if not slots:
-        print(f"[booking] no slots available for HR {primary_hr}", file=sys.stderr)
+        logger.warning(f"[booking] no slots available for HR {primary_hr}")
         return None
 
     token = str(uuid.uuid4())
@@ -384,7 +380,7 @@ def select_slot(token: str, slot_iso: str) -> dict:
             {"_id": token},
             {"$set": {"status": "pending", "selected_slot": None}},
         )
-        print(f"[booking] failed to finalize {token}: {e!r}", file=sys.stderr)
+        logger.error(f"[booking] failed to finalize {token}: {e!r}")
         return {"ok": False, "error": "internal_error"}
 
 

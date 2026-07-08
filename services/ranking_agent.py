@@ -6,26 +6,22 @@ screened_candidates / interview_insights and writes a unified ranked_candidates
 document.
 """
 import os
+import logging
 from datetime import datetime, timezone
 from typing import Optional, TypedDict
-from pymongo import MongoClient
 from dotenv import load_dotenv
 
 import config
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 
 
-_DB = None
 
 
 def _get_db():
-    global _DB
-    if _DB is None:
-        uri = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
-        db_name = os.getenv("MONGODB_DB", "recruitment-module")
-        _DB = MongoClient(uri)[db_name]
-    return _DB
+    from services.db import get_db
+    return get_db()
 
 
 def _candidates():
@@ -293,25 +289,25 @@ if __name__ == "__main__":
     blended = compute_composite(80, 67)
     assert blended["composite_score"] == 72.2, blended
     assert blended["score_breakdown"]["interview"] == 67.0
-    print(f"[ok] composite happy path     -> {blended['composite_score']}")
+    logger.info(f"[ok] composite happy path     -> {blended['composite_score']}")
 
     # compute_composite — CV-only when never interviewed.
     cv_only = compute_composite(90, None)
     assert cv_only["composite_score"] == 90.0, cv_only
     assert cv_only["score_breakdown"]["interview"] is None
     assert cv_only["score_breakdown"]["weights"] == {"cv": 1.0, "interview": 0.0}
-    print(f"[ok] composite CV-only path   -> {cv_only['composite_score']}")
+    logger.info(f"[ok] composite CV-only path   -> {cv_only['composite_score']}")
 
     # recommend — strong_yes (clean, high score).
     assert recommend(85, []) == "strong_yes"
-    print("[ok] recommend strong_yes")
+    logger.info("[ok] recommend strong_yes")
 
     # recommend — review (high score but a red flag forces human review).
     assert recommend(85, ["fake degree"]) == "review"
-    print("[ok] recommend review (flagged)")
+    logger.info("[ok] recommend review (flagged)")
 
     # recommend — no (flag + sub-threshold score).
     assert recommend(60, ["unexplained gap"]) == "no"
-    print("[ok] recommend no")
+    logger.info("[ok] recommend no")
 
-    print("All self-tests passed.")
+    logger.info("All self-tests passed.")

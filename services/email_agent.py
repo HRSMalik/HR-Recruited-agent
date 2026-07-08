@@ -1,5 +1,6 @@
 """Send emails via Gmail API using shared OAuth credentials."""
 import base64
+import logging
 import sys
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -7,6 +8,7 @@ from email.mime.text import MIMEText
 from googleapiclient.discovery import build
 
 from services.parser_agent import _load_google_credentials
+logger = logging.getLogger(__name__)
 
 
 def _gmail_service():
@@ -27,5 +29,5 @@ def send_email(to: str, subject: str, html_body: str) -> str:
     raw = base64.urlsafe_b64encode(message.as_bytes()).decode()
     service = _gmail_service()
     result = service.users().messages().send(userId="me", body={"raw": raw}).execute()
-    print(f"[email] sent to {to} subject={subject!r} id={result.get('id')}", file=sys.stderr)
+    logger.warning(f"[email] sent to {to} subject={subject!r} id={result.get('id')}")
     return result["id"]

@@ -5,23 +5,17 @@ from typing import List, Optional
 
 from pydantic import BaseModel, Field
 from langchain.chat_models import init_chat_model
-from pymongo import MongoClient
 from dotenv import load_dotenv
 
 from utils.schemas import Criterion, CriterionImportance
 
 load_dotenv()
 
-_DB = None
 
 
 def _get_db():
-    global _DB
-    if _DB is None:
-        uri = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
-        db_name = os.getenv("MONGODB_DB", "recruitment-module")
-        _DB = MongoClient(uri)[db_name]
-    return _DB
+    from services.db import get_db
+    return get_db()
 
 
 def _collection():
