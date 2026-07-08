@@ -18,7 +18,7 @@ from dotenv import load_dotenv
 from googleapiclient.discovery import build
 from pymongo import MongoClient
 
-from parser_agent import _load_google_credentials
+from services.parser_agent import _load_google_credentials
 
 import config
 
@@ -245,7 +245,7 @@ def create_slot_picker_booking(candidate_doc: dict, score: int) -> Optional[str]
     _bookings().insert_one(booking)
 
     booking_url = f"{cfg['base_url']}/book/{token}"
-    from email_agent import send_email
+    from services.email_agent import send_email
     send_email(
         to=email,
         subject="You're Shortlisted — Choose Your Interview Slot",
@@ -304,7 +304,7 @@ def select_slot(token: str, slot_iso: str) -> dict:
             if (m or {}).get("email"):
                 hr_attendees.append(m["email"])
 
-        from calendar_agent import create_calendar_event, is_slot_free
+        from services.calendar_agent import create_calendar_event, is_slot_free
 
         # Layer 1 (authoritative): atomically reserve the slot for EVERY attendee
         # in MongoDB before doing anything else. This closes the check-then-act
@@ -415,7 +415,7 @@ def send_due_reminders() -> dict:
     `reminder_sent` so each meeting is reminded exactly once. Driven by the
     background _reminder_loop in app.py (time-based, not part of the graph).
     """
-    from email_agent import send_email
+    from services.email_agent import send_email
 
     hours = config.REMINDER_HOURS_BEFORE
     now = datetime.now(timezone.utc)

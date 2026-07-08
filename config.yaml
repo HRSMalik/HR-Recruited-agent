@@ -1,0 +1,53 @@
+# HR Recruited — non-secret application config (committed, diffable).
+# Secrets and per-deployment values (API keys, DB URI, Google IDs, CORS
+# origins, base URLs) live in .env — never here. See config.py (the loader).
+
+# Composite ranking weights (blend CV match + interview score)
+rank_cv_weight: 0.4
+rank_interview_weight: 0.6
+
+# Hiring recommendation score bands (composite_score -> label)
+recommend_strong_yes: 80
+recommend_yes: 65
+recommend_maybe: 50
+recommend_review_min: 70
+
+# Rule-based red-flag thresholds (below these -> flag raised)
+rule_min_experience_years: 0
+rule_weak_cv: 40
+rule_weak_interview: 40
+
+# Voice screening
+voice_call_threshold: 70          # fit_percent >= this -> candidate is called
+scoring_model: gpt-4o             # LLM used to score interview transcripts
+vapi_default_country_code: "+92"  # default region for phone normalisation
+
+# Google Calendar (interview scheduling)
+calendar_timezone: Asia/Karachi
+calendar_business_start_hour: 14
+calendar_business_end_hour: 17
+calendar_meeting_duration_min: 30
+calendar_threshold: 60            # interview score >= this -> book a meeting
+calendar_buffer_hours: 24         # earliest bookable slot, from now
+
+# Candidate slot-picker booking window
+booking_days_ahead: 10
+booking_weekday_start_hour: 10
+booking_weekday_end_hour: 19
+booking_friday_start_hour: 10
+booking_friday_end_hour: 12
+booking_slot_duration_min: 60
+booking_max_slots_shown: 50
+booking_token_expires_hours: 48
+
+# Pre-interview reminder
+reminder_hours_before: 8
+
+# Call recovery (retry declined calls)
+max_retry_attempts: 3
+retry_interval_minutes: 5
+
+# Background loop intervals (seconds)
+shortlist_interval_seconds: 30
+retry_loop_interval_seconds: 60
+reminder_loop_interval_seconds: 900

@@ -5,7 +5,7 @@ from langchain.chat_models import init_chat_model
 from pymongo import MongoClient
 from dotenv import load_dotenv
 
-from schemas import CriteriaScoringResult, ProfessionalScoringResult
+from utils.schemas import CriteriaScoringResult, ProfessionalScoringResult
 
 load_dotenv()
 

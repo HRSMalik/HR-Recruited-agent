@@ -6,7 +6,7 @@ from email.mime.text import MIMEText
 
 from googleapiclient.discovery import build
 
-from parser_agent import _load_google_credentials
+from services.parser_agent import _load_google_credentials
 
 
 def _gmail_service():

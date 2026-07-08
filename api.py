@@ -8,26 +8,26 @@ from contextlib import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import FastAPI, HTTPException, Header, File, UploadFile, status, Form, Query, Depends, Body
 from fastapi.responses import Response, JSONResponse, HTMLResponse
-from auth import require_api_key
+from utils.auth import require_api_key
 from pymongo.errors import PyMongoError
 import config
-from schemas import JobPostAgentRequest, HumanFeedback, JobPostAgentResult, CandidateListResponse, JobListResponse, RankedListResponse, RerankRequest, CriteriaUpdateRequest
-from criteria_agent import generate_criteria, get_criteria, update_criteria, confirm_criteria
+from utils.schemas import JobPostAgentRequest, HumanFeedback, JobPostAgentResult, CandidateListResponse, JobListResponse, RankedListResponse, RerankRequest, CriteriaUpdateRequest
+from services.criteria_agent import generate_criteria, get_criteria, update_criteria, confirm_criteria
 import uuid
 
 from langgraph.errors import GraphInterrupt
 from langgraph.types import Command
 
-from job_post import create_workflow_agent, _get_job_descriptions_collection, publish_job_to_linkedin
-from parser_agent import _get_candidates_collection, detect_new_applicants, mark_processed
-from voice_agent import record_call_result, list_screened_candidates, _screened
-from call_logs import (
+from services.job_post import create_workflow_agent, _get_job_descriptions_collection, publish_job_to_linkedin
+from services.parser_agent import _get_candidates_collection, detect_new_applicants, mark_processed
+from services.voice_agent import record_call_result, list_screened_candidates, _screened
+from services.call_logs import (
     list_call_logs as cl_list,
     call_stats as cl_stats,
     manual_retry as cl_manual_retry,
     close_log as cl_close,
 )
-from booking_agent import get_booking, select_slot
+from services.booking_agent import get_booking, select_slot
 from typing import Optional
 from datetime import datetime, timezone
 import uuid
@@ -84,7 +84,7 @@ async def _shortlist_loop(interval_seconds: int):
 def _retry_start_interview(cand: dict):
     """Adapt a screened_candidates doc into the state shape _start_livekit_interview
     expects, for candidates whose initial_screening_logs retry is due."""
-    from voice_agent import _start_livekit_interview
+    from services.voice_agent import _start_livekit_interview
     state = {
         "cv_id": cand["_id"],
         "jd_id": cand.get("jd_id", ""),
@@ -97,7 +97,7 @@ def _retry_start_interview(cand: dict):
 async def _retry_loop(interval_seconds: int = 60):
     """Send a fresh LiveKit interview invite (new room + new email) to candidates
     whose no_show/incomplete attempt is due for retry."""
-    from call_logs import process_retries
+    from services.call_logs import process_retries
 
     while True:
         try:
@@ -117,7 +117,7 @@ async def _reminder_loop(interval_seconds: int):
     Time-based (not part of the pipeline graph): periodically scans scheduled
     meetings starting within REMINDER_HOURS_BEFORE and sends a one-time reminder.
     """
-    from booking_agent import send_due_reminders
+    from services.booking_agent import send_due_reminders
 
     while True:
         try:
@@ -422,7 +422,7 @@ async def list_ranked_candidates(
     `top_n` caps the ranked pool; `skip`/`limit` paginate within it. The 1-based
     `rank` on each item is global across the ranked pool, not per-page.
     """
-    from ranking_agent import rank_for_jd
+    from services.ranking_agent import rank_for_jd
     ranked = rank_for_jd(jd_id, top_n=top_n)
     return {
         "items": ranked[skip: skip + limit],
@@ -441,7 +441,7 @@ async def rerank_job(jd_id: str, body: Optional[RerankRequest] = None):
     weights for this run only (the .env is not modified). Both must be supplied
     together to take effect.
     """
-    from ranking_agent import rerank_jd
+    from services.ranking_agent import rerank_jd
     # Fail loud on an unknown jd_id: a rerank is an explicit action, so a typo
     # should 404, not silently "succeed" with an empty list.
     if not _get_job_descriptions_collection().find_one({"_id": jd_id}):
@@ -479,7 +479,7 @@ async def list_job_posts(
 @app.post("/test-interview", tags=["Test"])
 async def trigger_test_interview():
     """Create a LiveKit interview room for manual testing and return the join link."""
-    from voice_agent import _start_livekit_interview, _gen_candidate_token
+    from services.voice_agent import _start_livekit_interview, _gen_candidate_token
     job = _get_job_descriptions_collection().find_one({}, sort=[("_id", -1)])
     if not job:
         raise HTTPException(400, "No jobs found. Create a job first.")
@@ -515,7 +515,7 @@ def _get_pipeline_agent():
     """Compile the pipeline graph once and reuse it (carries the checkpointer)."""
     global _pipeline_agent
     if _pipeline_agent is None:
-        from pipeline import create_pipeline_agent
+        from services.pipeline import create_pipeline_agent
         _pipeline_agent = create_pipeline_agent()
     return _pipeline_agent
 

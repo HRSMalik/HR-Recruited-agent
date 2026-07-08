@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
 from googleapiclient.discovery import build
 
-from parser_agent import _load_google_credentials
+from services.parser_agent import _load_google_credentials
 
 import config
 

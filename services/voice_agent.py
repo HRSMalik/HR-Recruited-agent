@@ -25,7 +25,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from langchain.chat_models import init_chat_model
-from schemas import InterviewEvaluation
+from utils.schemas import InterviewEvaluation
 from pymongo import MongoClient
 from dotenv import load_dotenv
 
@@ -259,7 +259,7 @@ def _start_livekit_interview(state: dict, pipeline_config: Optional[dict] = None
         base_url = os.getenv("BOOKING_BASE_URL", "http://localhost:8000")
         url = f"{base_url}/interview/{room_name}?token={token}"
         try:
-            from email_agent import send_email
+            from services.email_agent import send_email
             send_email(
                 to=email,
                 subject="Your Technical Interview Is Ready — Join Now",
@@ -387,8 +387,8 @@ def score_and_persist_call(
     Returns {category, reason_label, interview_score, red_flags, composite_score,
     recommendation, call_log_status} for the caller to route on.
     """
-    from call_logs import categorize_call, log_call_attempt
-    from ranking_agent import compute_composite, detect_rule_flags, recommend
+    from services.call_logs import categorize_call, log_call_attempt
+    from services.ranking_agent import compute_composite, detect_rule_flags, recommend
 
     cv_id = doc["_id"]
     call_id = doc.get("call_id")
@@ -444,7 +444,7 @@ def score_and_persist_call(
 
     if category == "completed":
         try:
-            from transcript_analyzer import extract_interview_insights
+            from services.transcript_analyzer import extract_interview_insights
             insights = extract_interview_insights(transcript)
             insights.update({
                 "_id": cv_id, "call_id": call_id,
@@ -501,7 +501,7 @@ def record_call_result(
     threshold = config.CALENDAR_THRESHOLD
     if interview_score >= threshold and doc.get("email"):
         try:
-            from booking_agent import create_slot_picker_booking
+            from services.booking_agent import create_slot_picker_booking
             token = create_slot_picker_booking(doc, interview_score)
             print(f"[booking] slot picker {'emailed' if token else 'NOT created'} for {doc.get('name')}", file=sys.stderr)
         except Exception as e:  # noqa: BLE001
@@ -513,7 +513,7 @@ def record_call_result(
     # Persist the ranked record so legacy candidates also land in ranked_candidates
     # (parity with the pipeline's rank node — previously missing here).
     try:
-        from ranking_agent import rank_candidate
+        from services.ranking_agent import rank_candidate
         rank_candidate(doc["_id"])
     except Exception as e:  # noqa: BLE001
         print(f"[rank] failed for cv_id={doc['_id']}: {e!r}", file=sys.stderr)

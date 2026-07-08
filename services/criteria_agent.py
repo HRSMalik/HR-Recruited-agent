@@ -8,7 +8,7 @@ from langchain.chat_models import init_chat_model
 from pymongo import MongoClient
 from dotenv import load_dotenv
 
-from schemas import Criterion, CriterionImportance
+from utils.schemas import Criterion, CriterionImportance
 
 load_dotenv()
 

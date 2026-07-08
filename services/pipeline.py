@@ -112,7 +112,7 @@ def parse_cv(state: PipelineState) -> PipelineState:
     extracts the candidate dict. Runs in the first invoke (before any interrupt),
     so the temp PDF path in `state["pdf_path"]` is still valid.
     """
-    from parser_agent import process_cv
+    from services.parser_agent import process_cv
 
     result = process_cv(state["pdf_path"], state.get("jd_id"))
     data = result.get("data", {})
@@ -130,7 +130,7 @@ def parse_cv(state: PipelineState) -> PipelineState:
 
 def match(state: PipelineState) -> PipelineState:
     """Score the parsed CV against confirmed JD criteria and record fit_percent."""
-    from shortlisting_agent import (
+    from services.shortlisting_agent import (
         _score_candidate, _job_criteria, _job_descriptions, _candidates,
     )
 
@@ -227,7 +227,7 @@ def book(state: PipelineState) -> PipelineState:
     the booking to "booked", so a "pending"-only check would miss it and re-create
     a second booking + email.
     """
-    from booking_agent import create_slot_picker_booking, _bookings
+    from services.booking_agent import create_slot_picker_booking, _bookings
 
     cv_id = state["cv_id"]
     existing = _bookings().find_one({
@@ -283,7 +283,7 @@ def rank(state: PipelineState) -> PipelineState:
 
     None-safe: an unknown cv_id returns None, so the graph still completes cleanly.
     """
-    from ranking_agent import rank_candidate
+    from services.ranking_agent import rank_candidate
 
     doc = rank_candidate(state["cv_id"]) or {}
     return {
@@ -300,7 +300,7 @@ def start_interview(state: PipelineState, config=None) -> PipelineState:
     Creates the room once (guarded against re-runs on LangGraph resume), then
     suspends until /voice/livekit-complete resumes the thread with the transcript.
     """
-    from voice_agent import _start_livekit_interview, _screened
+    from services.voice_agent import _start_livekit_interview, _screened
 
     cv_id = state["cv_id"]
     if not _screened().find_one({"_id": cv_id}):
@@ -331,7 +331,7 @@ def score_interview(state: PipelineState) -> PipelineState:
     drives route_after_interview (retriable declines -> wait_retry node). Booking
     and ranking are separate nodes (BE-010/012).
     """
-    from voice_agent import score_and_persist_call, _screened
+    from services.voice_agent import score_and_persist_call, _screened
 
     cv_id = state["cv_id"]
     doc = _screened().find_one({"_id": cv_id}) or {
@@ -443,7 +443,7 @@ if __name__ == "__main__":
     print(f"[ok] pipeline agent compiled (checkpointer={type(_checkpointer).__name__})")
 
     # parse_cv node: monkeypatch process_cv so no real PDF/LLM is needed.
-    import parser_agent
+    from services import parser_agent
     parser_agent.process_cv = lambda pdf_path, jd_id=None: {
         "id": "cv-parsed-1",
         "data": {
@@ -454,7 +454,7 @@ if __name__ == "__main__":
     }
 
     # match node: monkeypatch scorer + DB helpers (no real LLM / Mongo).
-    import shortlisting_agent
+    from services import shortlisting_agent
     _mock_payload = {
         "fit_percent": 75,
         "criteria_scores": [],
@@ -479,7 +479,7 @@ if __name__ == "__main__":
     # start_interview + score_interview: monkeypatch voice_agent / call_logs /
     # transcript_analyzer / ranking_agent (no real Vapi / Mongo / LLM).
     import uuid
-    import voice_agent, call_logs, transcript_analyzer
+    from services import voice_agent, call_logs, transcript_analyzer
     from langgraph.types import Command
 
     class _FakeColl:
@@ -528,13 +528,13 @@ if __name__ == "__main__":
     call_logs.log_call_attempt = _fake_log_call_attempt
 
     # book node: monkeypatch booking_agent (no real email / slots / Mongo).
-    import booking_agent
+    from services import booking_agent
     _booked = {}
     booking_agent.create_slot_picker_booking = lambda doc, score: (_booked.update({"cv_id": doc["_id"], "score": score}) or "tok-1")
     booking_agent._bookings = lambda: type("C", (), {"find_one": lambda s, q: None})()
 
     # rank terminal node: monkeypatch ranking_agent.rank_candidate (no real DB).
-    import ranking_agent
+    from services import ranking_agent
     _ranked_calls = []
     ranking_agent.rank_candidate = lambda cv_id, cv_weight=None, interview_weight=None: (
         _ranked_calls.append(cv_id) or {"composite_score": 78.5, "recommendation": "yes"}
