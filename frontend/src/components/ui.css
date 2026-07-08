@@ -250,3 +250,53 @@
 .mt-seg{display:inline-flex;border:1px solid var(--border-2);border-radius:var(--radius-sm);overflow:hidden}
 .mt-seg button{padding:7px 13px;font-size:13px;font-weight:500;color:var(--text-2);cursor:pointer;background:none;border:none}
 .mt-seg button.on{background:var(--accent-weak);color:var(--accent-text);font-weight:600}
+
+/* Interview room (BL-FE-11) — always dark, self-contained */
+.room{
+  --r-bg:#0b1017;--r-surface:#131a24;--r-surface2:#1a222e;--r-inset:#0e141c;
+  --r-text:#e8edf3;--r-text2:#aab4c0;--r-muted:#7c8896;--r-border:#232c38;--r-border2:#2d3745;
+  --r-accent:#10b981;--r-accent-soft:#0f2b22;--r-accent-text:#6ee7b7;--r-danger:#f26d6d;--r-danger-bg:#2a1719;
+  position:fixed;inset:0;background:var(--r-bg);color:var(--r-text);display:flex;flex-direction:column;font-family:var(--font-sans)}
+.room svg{stroke:currentColor;fill:none;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}
+.room-top{display:flex;align-items:center;gap:14px;padding:14px 22px;border-bottom:1px solid var(--r-border);background:var(--r-surface)}
+.room-brand{display:flex;align-items:center;gap:10px}
+.room-brand .sq{width:28px;height:28px;border-radius:8px;background:var(--r-accent);color:#04120c;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px}
+.room-brand .nm{font-weight:600;font-size:14px}.room-brand .nm small{display:block;color:var(--r-muted);font-size:11px;font-weight:500}
+.room-live{display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:600;color:var(--r-accent-text);background:var(--r-accent-soft);padding:5px 11px;border-radius:999px}
+.room-live .dot{width:7px;height:7px;border-radius:50%;background:var(--r-accent)}
+.room-live.off{color:var(--r-muted);background:var(--r-surface2)}.room-live.off .dot{background:var(--r-muted)}
+.room-meta{margin-left:auto;display:flex;align-items:center;gap:18px;color:var(--r-text2);font-size:13px}
+.room-meta b{color:var(--r-text);font-weight:600}
+.room-timer{font-variant-numeric:tabular-nums;font-weight:600;color:var(--r-text)}
+.room-stage{flex:1;display:flex;min-height:0}
+.room-vcol{flex:1;display:flex;flex-direction:column;padding:22px;gap:16px;min-width:0}
+.room-tiles{flex:1;display:grid;grid-template-columns:1fr 1fr;gap:16px;min-height:0}
+.room-tile{position:relative;border-radius:12px;border:1px solid var(--r-border);overflow:hidden;display:flex;align-items:center;justify-content:center}
+.room-tile.ai{background:radial-gradient(120% 120% at 50% 32%, #12241f 0%, var(--r-surface) 62%, var(--r-inset) 100%);border-color:#1e4034}
+.room-tile.cam{background:linear-gradient(160deg,#1a2432,#0e141c)}
+.room-tile video{width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}
+.room-name{position:absolute;left:14px;bottom:14px;display:flex;align-items:center;gap:8px;background:rgba(8,12,18,.7);border:1px solid var(--r-border);color:var(--r-text);font-size:13px;font-weight:500;padding:6px 12px;border-radius:999px}
+.room-name .mic{width:8px;height:8px;border-radius:50%;background:var(--r-accent)}
+.room-name .mic.off{background:var(--r-danger)}
+.room-tag{position:absolute;top:14px;right:14px;font-size:10.5px;font-weight:600;letter-spacing:.06em;color:var(--r-muted);background:rgba(8,12,18,.6);border:1px solid var(--r-border);padding:4px 9px;border-radius:999px}
+.room-orb{width:104px;height:104px;border-radius:50%;background:var(--r-accent-soft);border:1px solid #245043;display:flex;align-items:center;justify-content:center;color:var(--r-accent);box-shadow:0 0 0 10px rgba(16,185,129,.06)}
+.room-orb svg{width:44px;height:44px;stroke-width:1.5}
+.room-wave{position:absolute;bottom:70px;display:flex;align-items:flex-end;gap:5px;height:26px}
+.room-wave i{width:4px;border-radius:3px;background:var(--r-accent);opacity:.85}
+.room-wave i:nth-child(1){height:35%}.room-wave i:nth-child(2){height:70%}.room-wave i:nth-child(3){height:100%}.room-wave i:nth-child(4){height:55%}.room-wave i:nth-child(5){height:85%}.room-wave i:nth-child(6){height:40%}.room-wave i:nth-child(7){height:65%}
+.room-figure{width:120px;height:120px;border-radius:50%;background:#26313f;display:flex;align-items:center;justify-content:center;color:#42566b}.room-figure svg{width:60px;height:60px}
+.room-qbar{background:var(--r-surface);border:1px solid var(--r-border);border-radius:12px;padding:14px 18px;display:flex;align-items:center;gap:16px}
+.room-qbar .qn{font-size:11px;font-weight:600;letter-spacing:.08em;color:var(--r-accent-text);white-space:nowrap}
+.room-qbar .qt{color:var(--r-text);font-weight:500;flex:1;font-size:14px}
+.room-qprog{display:flex;gap:5px}.room-qprog i{width:24px;height:5px;border-radius:3px;background:var(--r-surface2)}.room-qprog i.done{background:var(--r-accent)}.room-qprog i.cur{background:var(--r-accent);opacity:.5}
+.room-panel{width:366px;border-left:1px solid var(--r-border);background:var(--r-surface);display:flex;flex-direction:column;min-height:0}
+.room-panel h3{font-size:11px;letter-spacing:.08em;color:var(--r-muted);font-weight:600;padding:16px 18px 4px}
+.room-panel h3 b{display:block;color:var(--r-text);font-size:14px;font-weight:600;letter-spacing:0;margin-top:4px}
+.room-log{flex:1;overflow:auto;padding:8px 18px 18px;display:flex;flex-direction:column;gap:14px}
+.room-line .w{font-size:11px;font-weight:600;letter-spacing:.03em;margin-bottom:4px;color:var(--r-muted)}.room-line.ai .w{color:var(--r-accent-text)}
+.room-line p{font-size:13px;line-height:1.5;color:var(--r-text);background:var(--r-surface2);border:1px solid var(--r-border);padding:10px 12px;border-radius:8px}.room-line.cand p{background:var(--r-inset)}
+.room-controls{display:flex;align-items:center;justify-content:center;gap:20px;padding:16px;border-top:1px solid var(--r-border);background:var(--r-surface)}
+.room-cwrap{display:flex;flex-direction:column;align-items:center;gap:6px;color:var(--r-muted);font-size:11px}
+.room-ctrl{width:50px;height:50px;border-radius:50%;border:1px solid var(--r-border2);background:var(--r-surface2);color:var(--r-text);display:flex;align-items:center;justify-content:center;cursor:pointer}.room-ctrl svg{width:20px;height:20px}
+.room-ctrl.active-off{background:var(--r-danger-bg);border-color:#43242a;color:var(--r-danger)}
+.room-ctrl.leave{width:auto;padding:0 20px;border-radius:999px;background:var(--r-danger);border-color:var(--r-danger);color:#fff;font-weight:600;gap:8px;font-size:14px}.room-ctrl.leave svg{width:17px;height:17px}

@@ -2,6 +2,8 @@
 
 interface ImportMetaEnv {
   readonly VITE_API_BASE_URL?: string
+  readonly VITE_LIVEKIT_URL?: string
+  readonly VITE_LIVEKIT_TOKEN?: string
 }
 interface ImportMeta {
   readonly env: ImportMetaEnv
