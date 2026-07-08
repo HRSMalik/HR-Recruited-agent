@@ -300,3 +300,40 @@
 .room-ctrl{width:50px;height:50px;border-radius:50%;border:1px solid var(--r-border2);background:var(--r-surface2);color:var(--r-text);display:flex;align-items:center;justify-content:center;cursor:pointer}.room-ctrl svg{width:20px;height:20px}
 .room-ctrl.active-off{background:var(--r-danger-bg);border-color:#43242a;color:var(--r-danger)}
 .room-ctrl.leave{width:auto;padding:0 20px;border-radius:999px;background:var(--r-danger);border-color:var(--r-danger);color:#fff;font-weight:600;gap:8px;font-size:14px}.room-ctrl.leave svg{width:17px;height:17px}
+
+/* Responsive + reduced-motion (BL-FE-12) */
+@media (max-width:1024px){
+  .ov-grid,.iv-grid{grid-template-columns:1fr}
+  .cd-grid{grid-template-columns:1fr}
+  .jp-grid{grid-template-columns:1fr}
+  .ov-stats{grid-template-columns:repeat(2,1fr)}
+  .iv-stats{grid-template-columns:repeat(3,1fr)}
+}
+@media (max-width:820px){
+  .app-shell{flex-direction:column}
+  .side{width:100%;flex-direction:row;flex-wrap:wrap;align-items:center;padding:12px 16px;border-right:none;border-bottom:1px solid var(--border)}
+  .side__brand{padding:0;margin-right:6px}
+  .side__nav{flex-direction:row;flex-wrap:wrap;flex:1;gap:4px}
+  .side__foot{margin-top:0;border-top:none;padding-top:0;width:auto;margin-left:auto}
+  .page{padding:20px 16px}
+  .iv-stats{grid-template-columns:repeat(2,1fr)}
+  .room-stage{flex-direction:column}
+  .room-panel{width:100%;border-left:none;border-top:1px solid var(--r-border);max-height:38vh}
+  .room-tiles{grid-template-columns:1fr}
+  .mt-meet{grid-template-columns:78px 1fr;gap:12px 14px}
+  .mt-meet .mt-badge{grid-column:2;justify-self:start}
+  .mt-meet .mt-acts{grid-column:2;justify-self:start}
+}
+@media (max-width:560px){
+  .ov-stats,.iv-stats{grid-template-columns:1fr}
+  .sl-cand .em{display:none}
+  .cd-head .score .v{font-size:28px}
+}
+@media (prefers-reduced-motion:reduce){
+  *{transition:none !important;animation:none !important}
+}
+
+/* Table overflow containment (BL-FE-12) */
+.page{overflow-x:hidden}
+.ui-table-wrap{overflow-x:auto}
+.ui-table{min-width:600px}

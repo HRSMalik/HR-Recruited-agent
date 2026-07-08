@@ -10,6 +10,8 @@ function applyTheme(t: Theme) {
 
 const initialTheme: Theme = ((): Theme => {
   try {
+    const q = new URLSearchParams(window.location.search).get('theme')
+    if (q === 'dark' || q === 'light') return q
     const t = localStorage.getItem(THEME_KEY)
     return t === 'dark' ? 'dark' : 'light'
   } catch {

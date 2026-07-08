@@ -11,7 +11,7 @@
 
 | Total | Complete | Open |
 | --- | --- | --- |
-| 31 | 11 | 20 |
+| 31 | 12 | 19 |
 
 _(18 backend audit items · 13 frontend build items)_
 
@@ -46,7 +46,6 @@ _(18 backend audit items · 13 frontend build items)_
 
 | ID | Description | Priority |
 |---|---|---|
-| BL-FE-12 | Polish + states + a11y + responsive — loading/empty/error states, `:focus-visible`, WCAG AA, breakpoints, dark theme; design-agent verify pass | MEDIUM |
 | BL-FE-13 | FE Dockerfile + build/deploy (Vite build) + CI | LOW |
 
 ---
@@ -66,3 +65,4 @@ _(18 backend audit items · 13 frontend build items)_
 | BL-FE-09 | Interviews (call ops) — stat tiles, call-log table w/ retry/close, outcomes donut, retry queue; calls store | MEDIUM | COMPLETE 2026-07-08 — typecheck + live render verified |
 | BL-FE-10 | Meetings — day-grouped scheduled interviews, status pills, Join → /interview/:room, reschedule | MEDIUM | COMPLETE 2026-07-08 — typecheck + live render verified |
 | BL-FE-11 | Interview room — Meet-style dark room + livekit-client (connect/track/controls) scaffold; preview when no server | HIGH | COMPLETE 2026-07-08 — typecheck + live render verified |
+| BL-FE-12 | Polish — responsive breakpoints (sidebar collapse, grids stack, table scroll-containment), dark-theme verified, reduced-motion, a11y (focus-visible + aria-labels) | MEDIUM | COMPLETE 2026-07-08 — build + light/dark/narrow render verified |

@@ -8,8 +8,10 @@ export function Table({
   ...rest
 }: { children: ReactNode } & TableHTMLAttributes<HTMLTableElement>) {
   return (
-    <table className={`ui-table ${className}`.trim()} {...rest}>
-      {children}
-    </table>
+    <div className="ui-table-wrap">
+      <table className={`ui-table ${className}`.trim()} {...rest}>
+        {children}
+      </table>
+    </div>
   )
 }
