@@ -11,7 +11,7 @@
 
 | Total | Complete | Open |
 | --- | --- | --- |
-| 31 | 9 | 22 |
+| 31 | 10 | 21 |
 
 _(18 backend audit items · 13 frontend build items)_
 
@@ -46,7 +46,6 @@ _(18 backend audit items · 13 frontend build items)_
 
 | ID | Description | Priority |
 |---|---|---|
-| BL-FE-10 | Meetings — day-grouped scheduled interviews, status, Join → room, reschedule; wire to bookings/meetings | MEDIUM |
 | BL-FE-11 | Interview room — `livekit-client` integration (AI-audio tile + candidate camera + live transcript + mic/cam/captions/leave + question progress); wire to `/interview/{room}` + LiveKit token | HIGH |
 | BL-FE-12 | Polish + states + a11y + responsive — loading/empty/error states, `:focus-visible`, WCAG AA, breakpoints, dark theme; design-agent verify pass | MEDIUM |
 | BL-FE-13 | FE Dockerfile + build/deploy (Vite build) + CI | LOW |
@@ -66,3 +65,4 @@ _(18 backend audit items · 13 frontend build items)_
 | BL-FE-07 | Shortlist — ranked table (composite bars, recommendation badges, red-flag chips), filters, re-rank modal; shortlist store | HIGH | COMPLETE 2026-07-08 — typecheck + live render verified |
 | BL-FE-08 | Candidate detail — fit by criterion, interview insights + transcript, CV summary, human decision actions (logged) | MEDIUM | COMPLETE 2026-07-08 — typecheck + live render verified |
 | BL-FE-09 | Interviews (call ops) — stat tiles, call-log table w/ retry/close, outcomes donut, retry queue; calls store | MEDIUM | COMPLETE 2026-07-08 — typecheck + live render verified |
+| BL-FE-10 | Meetings — day-grouped scheduled interviews, status pills, Join → /interview/:room, reschedule | MEDIUM | COMPLETE 2026-07-08 — typecheck + live render verified |
