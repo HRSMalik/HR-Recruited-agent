@@ -38,7 +38,8 @@ extracted_data/
 *.sqlite-shm
 *.sqlite-wal
 
-.claude/
+.claude/*
+!.claude/agents/
 .credentials/
 .trello_creds
 
@@ -53,7 +54,3 @@ data.zip
 
 # Mirrored org project claude.md — kept in tree, not committed (style-guide rule)
 claude.md
-
-# Reusable agent systems (canonical in claude-stuff; local mirror here)
-qa-agent/
-design-agent/

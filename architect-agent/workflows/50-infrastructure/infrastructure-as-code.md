@@ -1,0 +1,102 @@
+# infrastructure-as-code
+
+**Group:** 50-infrastructure  ·  **Runs as:** subagent: ../.claude/agents/infrastructure-architect.md  ·  **Mode:** audit + design  ·  **Default model:** sonnet
+
+## Purpose
+
+Design the IaC approach — tool selection (Terraform/Pulumi/CDK/CloudFormation), immutable infrastructure, GitOps reconciliation, environment parity, state management, drift detection, and policy-as-code gates — so every environment is reproducible from version control, every change is peer-reviewed and policy-gated, and no secret ever enters IaC source. The architect authors the IaC *design and standards*; it never runs `apply` — that is the operator's job.
+
+## Inputs & preconditions
+
+- From `project-architecture-config.md`: the existing stack + deployment target, the environments that exist (local/dev/staging/prod), the cloud target and managed-service set, the compliance regime (PII/financial — secrets must be externalized), the team topology (who owns infra), and the artifact locations (`architecture/<slug>/`).
+- The architecture **drivers**: the prioritized quality-attribute scenarios from `../00-drivers/quality-attribute-scenarios.md` (the utility tree) — in particular the operability/reproducibility, security/secrets, reliability/RTO, and cost scenarios the IaC design must satisfy. A flow with no drivers downgrades scope and says so — you cannot evaluate an IaC approach without the attributes it is optimizing for.
+- The deployment topology already decided in `deployment-topology.md` (which environments, which regions/AZs, blue-green vs rolling, the C4 deployment view) — IaC codifies that topology, it does not re-decide it.
+- The CI/CD pipeline shape from `cicd-architecture.md` — IaC changes flow through the same pipeline; plan+lint+policy gates must integrate with that pipeline before apply is ever reached.
+- Preconditions: read the existing IaC source (if any) before proposing — audit what exists vs the stated topology; don't reinvent. If no IaC source exists, note that as a finding of type `operability` / `evolvability`.
+
+## Oracle (source of truth)
+
+The hard IaC contract: every environment is reproducible from version control with environment parity; state is managed and drift-detected; changes are peer-reviewed and policy-gated before apply; secrets are externalized and never appear in IaC source or state.
+
+- **hard:**
+  - **Environment reproducibility:** given the IaC source at a tagged commit, a clean environment can be brought to the declared state in ≤ RTO (per `QAS-AVAIL-*`); any resource not declared in source is flagged as drift. Verifiable: `terraform plan` against a fresh backend must exit with `0 changes` after a reference apply; or equivalent for Pulumi/CDK.
+  - **State management:** remote state backend (S3+DynamoDB, Terraform Cloud, GCS, etc.) is declared in the design; no local `terraform.tfstate` on any shared path. State locking is configured (DynamoDB lock or backend-native locking) so concurrent applies are serialized, not silently clobbered.
+  - **Drift detection:** a scheduled drift-detection job (fitness function) runs `terraform plan -detailed-exitcode` (or equivalent) on a read-only basis and reports nonzero-change exits as findings; drift is never silently accepted. Frequency ≥ daily for each production-equivalent environment.
+  - **Secrets externalized:** zero secrets (credentials, keys, connection strings) in IaC source files or in stored state. Secrets are injected at apply-time via a secret store reference (AWS Secrets Manager / HashiCorp Vault / GCP Secret Manager / Azure Key Vault) — the IaC source declares the reference, never the value. Verifiable: `grep -r 'password\|secret\|key\s*=\s*"' *.tf` (or equivalent) exits with no matches in committed IaC source. A violated-secret check blocks (`oracle:hard`, `severity:critical`).
+  - **Policy gate (policy-as-code):** every plan passes a policy-as-code check (OPA/Conftest or Sentinel) before apply is permitted in any non-local environment. The policy set must include: no public-egress resources without an explicit exemption tag, no unencrypted-at-rest data stores, no IAM wildcards (`*` resource + `*` action). Policy failures block the pipeline.
+  - **Cost bounded:** the IaC design carries an order-of-magnitude monthly cost estimate per environment tier (dev / staging / prod), including compute, storage, state-backend, and egress; the estimate is compared against the budget constraint in `project-architecture-config.md`. A plan whose estimated cost exceeds the stated budget without an accepted-risk entry blocks (`../shared/quality-attribute-rubric.md` *Cost bounded* oracle; `QAS-COST-*`). No managed service or cloud resource is declared "cost unstated."
+  - **Diagram compiles:** the C4 deployment-view update (showing the IaC pipeline as a trust boundary) is authored as diagrams-as-code (Mermaid / PlantUML / Structurizr DSL) and renders without error. A DSL syntax error or an unrendered diagram blocks (`../shared/diagramming-standards.md` *Diagram compiles* oracle).
+  - **Peer review:** IaC changes in non-local environments flow through the same PR/CR gate as application code (`cicd-architecture.md`) — a plan output is attached to the PR; no apply without an approved review. `terraform apply` (or equivalent) is never run from a developer workstation against shared environments.
+  - **Driver traceability:** every IaC module/resource traces to an architecture decision (ADR) or quality-attribute scenario that demands it. An untraced resource is a candidate for accidental complexity — flag it (`oracle:hard`, `severity:minor`).
+  - **ADR complete:** the IaC-tool selection ADR exists, has context + ≥2 options + decision + consequences (positive AND negative) + status (`../shared/adr-template.md`). Absent or incomplete ADR blocks.
+- **soft:**
+  - **Fully codified (no click-ops):** every resource the deployment topology requires is declared in IaC — no manually-created resource is known to be in any shared environment. Click-ops is `oracle:soft` advisory; any confirmed click-ops resource in a shared environment escalates to `oracle:hard` because it defeats reproducibility.
+  - **DRY modules — reuse over copy-paste:** environment-specific configuration is parameterized (variables/tfvars/stack config), not copy-pasted across environment definitions. A per-environment folder that is a near-verbatim copy of another is a DRY violation (`oracle:soft`, `severity:minor`).
+  - **GitOps-reconcilable:** the IaC source in version control is the declared desired state; the actual environment state converges toward it on each apply. Divergence between source and running state is surfaced (drift detection above), not left silent.
+  - **Conceptual integrity:** one IaC tool, one module structure, one variable-naming convention runs through the whole design (Brooks). A mix of raw CloudFormation + Terraform + hand-written shell in the same environment is a `soft` finding.
+
+## Standards & techniques
+
+- **Declarative IaC tooling** — declare the desired state, let the tool compute the diff:
+  - **Terraform (HCL)** — provider-agnostic; the dominant choice for multi-cloud or AWS; state backend + lock required; modules for reuse; workspaces or directory-per-env for isolation.
+  - **Pulumi (TypeScript/Python/Go)** — general-purpose language, same declarative semantics; good when the team is stronger in code than HCL; same state-backend requirements apply.
+  - **AWS CDK (TypeScript/Python)** — synthesizes CloudFormation; AWS-only; good when the team is all-in on AWS and wants strong typing; CloudFormation stacks are the state unit.
+  - **CloudFormation (YAML/JSON)** — AWS-native, no extra tool; less expressive, harder to modularize; acceptable when CDK overhead is unjustified.
+  - Choose by driver (team language fluency, cloud target, existing conventions) — not by fashion. Cite the tradeoff in the IaC-tool ADR.
+- **Immutable infrastructure** — a configuration change does not patch in place; it replaces the resource (blue-green swap, new AMI, re-provisioned container). "Pets vs cattle" as a heuristic: any resource you give a name and fix in place is a pet; all shared-environment resources should be cattle. Mutability is a `soft` finding; in-place patching of a database or a security group rule without an IaC change is a `hard` finding (drift).
+- **GitOps** — git is the single source of truth; every desired-state change enters via a PR, passes policy+plan, is reviewed, and is applied by an automated pipeline — never by a human running `apply` locally. Reconciliation loops (Flux, ArgoCD for k8s; Atlantis/Spacelift/Terraform Cloud for general IaC) enforce this; the IaC agent *designs* the reconciliation strategy, it never runs the loop itself.
+- **Environment parity** — dev, staging, and prod are parameterized instances of the same module set, differing only in variable values (size, replica count, domain). A variable that controls environment shape must be declared; an environment that diverges structurally from prod is a parity gap and a reliability/operability risk. Per `fallacies-and-tradeoffs.md` (Flexibility ↔ Simplicity): parameterize only what genuinely differs; avoid over-engineering the variable surface.
+- **DRY module design** — shared infrastructure patterns (networking, IAM roles, storage buckets, monitoring stacks) are modules, imported by each environment config. A module has: a documented interface (inputs, outputs, README), one responsibility, and a version pin. Un-versioned module references are `soft` findings (risk of surprise upgrades).
+- **State management** — remote, encrypted, access-controlled. For Terraform: S3 bucket (versioned, server-side-encrypted) + DynamoDB table (lock); for Pulumi: Pulumi Cloud or self-hosted backend; for CDK: CloudFormation stack state is managed by AWS natively. State must not contain secrets (output sensitive values are masked; use `sensitive = true`). State file access is IAM/RBAC-controlled — not world-readable.
+- **Drift detection** — a scheduled read-only `plan` run (fitness function) that exits non-zero if state has diverged from source. Integrates with observability (alert on nonzero exit) and the risk register (each confirmed drift item is a `type:risk` finding). Pair with `../40-cross-cutting/availability-resilience.md` — drift on a redundancy resource is an availability risk.
+- **Policy-as-code (OPA/Conftest or Sentinel)** — policies are declarative rules evaluated against the plan JSON before apply is permitted. OPA/Conftest: write `.rego` policies, run `conftest test <plan.json>`; Sentinel: HashiCorp-native, runs in Terraform Cloud/Enterprise. Policies are versioned, reviewed, and tested like code. Cross-reference `../40-cross-cutting/security-architecture.md` (STRIDE — policy gates are a control for the "Elevation of Privilege" and "Information Disclosure" STRIDE categories on the IaC pipeline trust boundary).
+- **Secrets externalization** — IaC declares a *reference* to a secret (e.g. `aws_secretsmanager_secret_version`, a Vault dynamic-credential path, or an SSM Parameter Store ARN); the value is injected at apply-time or at runtime by the workload. The IaC source and the state file must never contain a plaintext secret. Apply-time injection uses an IAM role (not a static key) scoped to the minimum permissions needed.
+- **Well-Architected alignment** — the IaC design is evaluated against the AWS/Azure Well-Architected Framework's **Operational Excellence** pillar (infra as code, small frequent changes, runbooks-as-code) and **Security** pillar (least-privilege IAM, no secrets in code, encryption in transit/at rest). Per `project-architecture-config.md`: if the project's datastore is currently a local/single-node instance, a managed equivalent (e.g. a managed Postgres/MongoDB service) is typically the prod-deploy target — the real prod-deploy ADR is in scope, and IaC must declare the managed cluster, not assume a local one.
+
+## Step sequence
+
+- **audit:** Read the existing IaC source (if any) and the deployment topology design → check each hard oracle in order: reproducibility (can a clean apply reach the declared state?), state backend declared + remote, drift detection scheduled, secrets externalized (grep check), policy gate configured, peer-review gate enforced in the pipeline, driver traceability (every resource tied to a decision/scenario), ADR exists and is complete → flag each failure with its severity and the driver it threatens → emit findings + risks (read-only, no edits, no `apply`).
+- **design:** Frame (extract confirmed drivers from the utility tree + the deployment topology + the CI/CD pipeline shape — read-only; if drivers are unstated, surface them as open questions) → Explore (≥2 divergent IaC approaches as concrete specs: e.g. "Terraform + S3 backend + Atlantis GitOps + OPA/Conftest" vs "Pulumi TypeScript + Pulumi Cloud backend + GitHub Actions reconciliation + Sentinel"; each spec covers: tool, module structure, state backend, secrets strategy, policy gate, drift-detection mechanism, pipeline integration, environment-parity parameterization, estimated operational cost delta) → Evaluate (the skeptical `architecture-evaluator` scores each direction against the utility tree + hard oracles using **ATAM**; identifies sensitivity points — e.g. environment reproducibility is sensitive to state-backend locking latency, secrets hygiene is sensitive to whether state encryption is enforced — and tradeoff points — e.g. Terraform HCL simplicity vs Pulumi type-safety; Terraform Cloud managed cost vs self-hosted Atlantis operational burden; runs CBAM to reject tooling tiers whose cost delta is not justified by a concrete driver; order-swapped to kill position bias; picks a winner, grafts superior ideas from runners-up) → Document (the **one** `solution-architect` writer authors: the IaC-tool ADR, the module-structure design doc, the state-backend and secrets-strategy design, the policy-set spec, the drift-detection fitness function spec, the environment-parity variable map, and a C4 deployment-view update showing the IaC pipeline as a trust boundary; all land in `architecture/<slug>/`) → Verify (fitness functions: dry-run `terraform validate` / `pulumi preview` / `cdk synth` on the authored IaC templates; `conftest test` on a sample plan JSON; secret-grep check on IaC source; diagram-compile check on the authored C4 update; traceability matrix — every resource traces to an ADR; evaluator re-scores from the authored artifacts) → loop ≤10 or pass.
+
+## Assertions & exit gate
+
+- Every environment can be brought to its declared state from a tagged VCS commit; a reference `plan` against the declared state exits with 0 changes (reproducibility check).
+- Remote, encrypted, access-controlled state backend is declared; state locking is configured; no local state files on shared paths.
+- A scheduled drift-detection fitness function (`terraform plan -detailed-exitcode` or equivalent, read-only) is specified; ≥ daily frequency; alerts on non-zero exit.
+- Zero plaintext secrets in IaC source or state; secret-grep check passes; all secrets externalized via a named secret store reference.
+- Every plan passes the named policy-as-code gate (OPA/Conftest or Sentinel) before apply is permitted; the policy set covers at minimum: public-egress exemption, at-rest encryption, no IAM wildcards.
+- **Cost bounded:** order-of-magnitude monthly estimate per environment tier (dev / staging / prod) is present; no managed service or resource is "cost unstated"; plan cost ≤ stated budget or an accepted-risk entry covers the delta.
+- IaC changes in shared environments require a PR with an attached plan output and an approved review; no human `apply` from a workstation.
+- Every resource in the IaC design traces to an ADR or QAS; untraced resources are flagged.
+- The IaC-tool-selection ADR exists with context, ≥2 considered options, decision, and positive + negative consequences.
+- Modules are DRY: environment differences are parameterized (variables/tfvars/stack config), not copy-pasted; each module has a documented interface and a version pin.
+- **Diagram compiles:** the C4 deployment-view update in `architecture/<slug>/diagrams/` is diagrams-as-code (Mermaid / PlantUML / Structurizr DSL) and renders without error; every IaC pipeline trust boundary is drawn and labeled.
+- **Gate:** hard oracles green (reproducibility, remote state + locking, drift detection specified, secrets externalized, policy gate configured, cost bounded, diagram compiles, peer-review enforced, driver traceability, ADR complete) AND (design) rubric mean ≥ 0.8 (DRY, no click-ops, GitOps-reconcilable, conceptual integrity).
+
+## Output
+
+Write `artifacts/infrastructure-as-code/report.json` per `shared/report-format.md` — findings/risks per `shared/finding-schema.md` (e.g. `ARCH-IAC-001` for a plaintext secret in source, `ARCH-IAC-002` for missing remote state, `ARCH-IAC-003` for absent drift detection, `ARCH-IAC-004` for a click-ops resource), the verification block (fitness-function results — validate/plan/policy-check exit codes; secret-grep result; traceability coverage; hard-oracle results; rubric score), and for design mode the paths to authored artifacts. Authored design artifacts land in `architecture/<slug>/`:
+
+```
+architecture/<slug>/
+├── adr/NNNN-iac-tool-selection.md       IaC tool + state backend + secrets + GitOps strategy
+├── adr/NNNN-environment-parity.md       parameterization approach; per-env variable map
+├── adr/NNNN-policy-as-code.md           OPA/Conftest vs Sentinel; policy set scope; pipeline integration
+├── design-doc.md                        updated: IaC architecture section (module structure, state, drift, secrets)
+├── diagrams/deployment-iac.puml|.md     C4 deployment view updated with IaC pipeline as a trust boundary
+└── fitness-functions.md                 updated: drift-detection schedule, secret-grep check, validate/plan CI checks
+```
+
+Audit mode: `report.json` only (read-only, no artifacts authored).
+
+## Guardrails
+
+Per `../shared/guardrails.md`:
+
+- **Propose & document — never apply.** The architect authors the IaC design (ADRs, module specs, policy specs, fitness-function specs, the deployment-view diagram) into `architecture/<slug>/`. It never runs `terraform apply`, `pulumi up`, `cdk deploy`, a cloud CLI command that changes state, or any migration against a live environment. The operator/CI pipeline applies the plan. This is the non-negotiable boundary — `guardrails.md §1` and `guardrails.md §7`.
+- **Never log or echo secrets.** Any credential encountered in IaC source during an audit is redacted in the finding's `evidence` field (show the *location*, not the value). Inject apply-time credentials via env; never include them in the authored design.
+- **Ground every decision in a driver.** Every IaC resource decision (tool choice, module boundary, state backend, policy scope) traces to a quality-attribute scenario or constraint. An untraced resource is accidental complexity — flag it, don't propose more of it.
+- **Reuse known patterns before inventing.** Reach for the established IaC pattern (remote S3+DynamoDB state, GitOps reconciliation via Atlantis, OPA/Conftest policy gates) before designing bespoke mechanisms. A new pattern needs a driver that the established one cannot satisfy.
+- **One writer (conceptual integrity).** Exactly one `infrastructure-architect` (in the role of solution-architect for this dimension) authors the IaC design artifacts; read-only advisors (security, reliability) feed findings and evaluate their dimension; the `architecture-evaluator` scores the design. No concurrent writes to the same artifact.
+- **Right-size, don't résumé-drive.** Per `project-architecture-config.md`: size the IaC tooling to the project's actual team topology and scale (e.g. an internal tool on a small team). Propose Terraform + a simple S3/DynamoDB backend before Terraform Cloud Enterprise; propose Conftest before a full Sentinel policy framework. Every layer of IaC tooling is operational surface area — size it to the driver.
+- Cross-reference: `cloud-well-architected.md` (Well-Architected Operational Excellence + Security pillars); `deployment-topology.md` (the topology this IaC codifies); `cicd-architecture.md` (the pipeline IaC plan+policy gates must integrate with); `../shared/guardrails.md` (the non-destructive + propose-only boundary).
