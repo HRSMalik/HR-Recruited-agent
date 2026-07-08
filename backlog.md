@@ -11,7 +11,7 @@
 
 | Total | Complete | Open |
 | --- | --- | --- |
-| 31 | 5 | 26 |
+| 31 | 6 | 25 |
 
 _(18 backend audit items · 13 frontend build items)_
 
@@ -46,7 +46,6 @@ _(18 backend audit items · 13 frontend build items)_
 
 | ID | Description | Priority |
 |---|---|---|
-| BL-FE-06 | Job posts + criteria editor — list, create (JD generate/review), criteria editor (generate → edit importance → confirm/lock); wire to `/job-posts` + `/jobs/{id}/criteria/*` | HIGH |
 | BL-FE-07 | Shortlist — ranked table (composite, recommendation, red flags), filters, re-rank weights; wire to `/ranked-candidates` + `/rerank` | HIGH |
 | BL-FE-08 | Candidate detail — fit by criterion, interview insights + transcript, CV summary, decision actions (advance/hold/reject, logged); wire to candidate data | MEDIUM |
 | BL-FE-09 | Interviews (call ops) — stat tiles, call-log table, outcomes donut, retry queue; wire to `/call-logs` + `/call-stats` + retry/close | MEDIUM |
@@ -66,3 +65,4 @@ _(18 backend audit items · 13 frontend build items)_
 | BL-FE-03 | API layer: `apiFetch()` + Zod schemas/types + typed endpoints + Zustand stores (session, jobs, shortlist, calls) | HIGH | COMPLETE 2026-07-08 — tsc strict verified |
 | BL-FE-04 | App shell: sidebar nav + React Router routes + theme toggle (session store) + placeholder pages | HIGH | COMPLETE 2026-07-08 — build + live render (routing + active nav) verified |
 | BL-FE-05 | Overview — stat cards, funnel, screening-call donut (Recharts), "Needs your attention"; calls store + sample fallback | HIGH | COMPLETE 2026-07-08 — typecheck + live render verified |
+| BL-FE-06 | Job posts + criteria editor (editable rows, importance selects, draft→confirm/lock); jobs store + criteria endpoints | HIGH | COMPLETE 2026-07-08 — typecheck + live render verified |
