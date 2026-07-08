@@ -54,6 +54,8 @@ def _get_processed_collection():
 _GOOGLE_SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets.readonly",
     "https://www.googleapis.com/auth/drive.readonly",
+    "https://www.googleapis.com/auth/calendar",
+    "https://www.googleapis.com/auth/gmail.send",
 ]
 _GOOGLE_CREDS_PATH = ".credentials/credentials.json"
 _GOOGLE_TOKEN_PATH = ".credentials/google_token.json"
@@ -121,7 +123,11 @@ def authorize():
             return
 
     flow = InstalledAppFlow.from_client_secrets_file(_GOOGLE_CREDS_PATH, _GOOGLE_SCOPES)
-    creds = flow.run_local_server(port=0)
+    creds = flow.run_local_server(
+        port=0,
+        login_hint=os.getenv("HR_EMAIL", "filzanoornaeem@gmail.com"),
+        prompt="consent",
+    )
     os.makedirs(os.path.dirname(_GOOGLE_TOKEN_PATH), exist_ok=True)
     with open(_GOOGLE_TOKEN_PATH, "w") as f:
         f.write(creds.to_json())
@@ -137,7 +143,7 @@ def _read_sheet_rows(sheets_service, spreadsheet_id: str, sheet_name: str) -> Li
     values = resp.get("values", [])
     if not values:
         return []
-    headers = values[0]
+    headers = [h.strip() for h in values[0]]
     rows = []
     for raw in values[1:]:
         padded = raw + [""] * (len(headers) - len(raw))
@@ -373,10 +379,14 @@ def process_cv(pdf_path: str, jd_id: Optional[str] = None, pages_root: str = "pd
             shutil.rmtree(work_dir, ignore_errors=True)
 
 
-def ingest_new_applicants() -> dict:
-    """Pull unprocessed rows from the `initial_applicants` sheet, download each CV
-    from Drive, run it through `process_cv`, and record the file_id in
-    `processed_applications` so re-runs skip it.
+def detect_new_applicants(dest_dir: str) -> list[dict]:
+    """Detect unprocessed applicants and download their CVs (no parse, no record).
+
+    Reads the applicants sheet, dedups against `processed_applications`, and
+    downloads each new CV into `dest_dir`. Parsing is left to the caller (the
+    pipeline's parse_cv node) so a CV is parsed exactly once.
+
+    Returns a list of {file_id, jd_id, pdf_path} for the new applicants.
 
     Required env vars:
       GOOGLE_SHEETS_ID              Spreadsheet ID (from the sheet URL).
@@ -399,40 +409,69 @@ def ingest_new_applicants() -> dict:
     rows = _read_sheet_rows(sheets_service, spreadsheet_id, sheet_name)
     processed = _get_processed_collection()
 
-    ingested = 0
-    skipped = 0
-    errors: list[str] = []
-
+    new_applicants: list[dict] = []
     for row in rows:
         jd_id = (row.get(job_id_col) or "").strip()
-        cv_cell = row.get(cv_col) or ""
-        file_id = _extract_drive_file_id(cv_cell)
-
+        file_id = _extract_drive_file_id(row.get(cv_col) or "")
         if not jd_id or not file_id:
-            skipped += 1
             continue
-
         if processed.find_one({"_id": file_id}):
-            skipped += 1
             continue
 
-        try:
-            with tempfile.TemporaryDirectory() as tmp_dir:
-                pdf_path = os.path.join(tmp_dir, f"{file_id}.pdf")
-                _download_drive_pdf(drive_service, file_id, pdf_path)
-                result = process_cv(pdf_path, jd_id=jd_id)
+        # The parser only handles PDFs. Skip + record any non-PDF upload (e.g. a
+        # .txt/.docx mistakenly submitted) so it isn't downloaded, doesn't crash
+        # the pipeline, and isn't re-checked + retried on every scheduler tick.
+        meta = drive_service.files().get(
+            fileId=file_id, fields="mimeType,name", supportsAllDrives=True
+        ).execute()
+        if meta.get("mimeType") != "application/pdf":
+            print(f"[ingest] skipping non-PDF upload {meta.get('name')!r} "
+                  f"({meta.get('mimeType')}) file_id={file_id}", file=sys.stderr)
+            mark_processed(file_id, jd_id, status="skipped_not_pdf")
+            continue
 
-            processed.insert_one({
-                "_id": file_id,
-                "processed_at": datetime.now(timezone.utc),
-                "jd_id": jd_id,
-                "cv_id": result["id"],
-            })
-            ingested += 1
-        except Exception as e:  # noqa: BLE001
-            errors.append(f"file_id={file_id}: {e!r}")
+        pdf_path = os.path.join(dest_dir, f"{file_id}.pdf")
+        _download_drive_pdf(drive_service, file_id, pdf_path)
+        new_applicants.append({"file_id": file_id, "jd_id": jd_id, "pdf_path": pdf_path})
 
-    return {"ingested": ingested, "skipped": skipped, "errors": errors}
+    return new_applicants
+
+
+def mark_processed(file_id: str, jd_id: str, cv_id: Optional[str] = None,
+                   status: str = "processed") -> None:
+    """Record a handled applicant so future runs skip it.
+
+    status: "processed" (parsed/launched) or "skipped_not_pdf" (unsupported file).
+    """
+    _get_processed_collection().insert_one({
+        "_id": file_id,
+        "processed_at": datetime.now(timezone.utc),
+        "jd_id": jd_id,
+        "cv_id": cv_id,
+        "status": status,
+    })
+
+
+def ingest_new_applicants() -> dict:
+    """Detect new applicants, parse each via `process_cv`, and record them.
+
+    Backward-compatible wrapper around detect_new_applicants + mark_processed
+    (used by the CLI / manual runs). The scheduler instead launches the pipeline
+    per applicant so parsing happens inside the graph (BE-013).
+    """
+    ingested = 0
+    errors: list[str] = []
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        new_applicants = detect_new_applicants(tmp_dir)
+        for app in new_applicants:
+            try:
+                result = process_cv(app["pdf_path"], jd_id=app["jd_id"])
+                mark_processed(app["file_id"], app["jd_id"], result["id"])
+                ingested += 1
+            except Exception as e:  # noqa: BLE001
+                errors.append(f"file_id={app['file_id']}: {e!r}")
+
+    return {"ingested": ingested, "skipped": 0, "errors": errors}
 
 
 if __name__ == "__main__":

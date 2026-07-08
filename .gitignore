@@ -45,3 +45,11 @@ extracted_data/
 # Nested clones (separate git repos)
 hr-recruited/
 claude-stuff/
+
+# Test data artifacts (not code)
+data/
+data.zip
+*.zip
+
+# Mirrored org project claude.md — kept in tree, not committed (style-guide rule)
+claude.md
