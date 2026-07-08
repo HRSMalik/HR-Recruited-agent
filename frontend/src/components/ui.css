@@ -215,3 +215,15 @@
 .cd-kv .r .v{font-weight:500}
 .cd-skills{display:flex;flex-wrap:wrap;gap:7px;margin-top:4px}
 .cd-sk{font-size:12px;color:var(--text-2);background:var(--surface-2);border:1px solid var(--border);padding:4px 10px;border-radius:6px}
+
+/* Interviews / call ops (BL-FE-09) */
+.iv-stats{display:grid;grid-template-columns:repeat(5,1fr);gap:12px}
+.iv-grid{display:grid;grid-template-columns:1.6fr 1fr;gap:16px;align-items:start}
+.iv-side{display:flex;flex-direction:column;gap:16px}
+.iv-lnk{color:var(--accent-text);font-weight:600;font-size:12.5px;cursor:pointer;background:none;border:none;padding:0}
+.iv-lnk.mut{color:var(--text-muted)}
+.iv-retry{display:flex;flex-direction:column;padding:4px 0}
+.iv-rr{display:flex;align-items:center;gap:12px;padding:11px 0;border-top:1px solid var(--border)}
+.iv-rr:first-child{border-top:none}
+.iv-rr .nm{font-size:13px;font-weight:600;flex:1}
+.iv-rr .nm small{display:block;color:var(--text-muted);font-weight:400;font-size:12px}
