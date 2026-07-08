@@ -11,7 +11,7 @@
 
 | Total | Complete | Open |
 | --- | --- | --- |
-| 31 | 1 | 30 |
+| 31 | 2 | 29 |
 
 _(18 backend audit items · 13 frontend build items)_
 
@@ -46,7 +46,6 @@ _(18 backend audit items · 13 frontend build items)_
 
 | ID | Description | Priority |
 |---|---|---|
-| BL-FE-02 | SVG `Icon` set (no emoji) + the standard component library: `Button`, `Card`/`CardHeader`/`CardBody`/`CardFooter`, `PageBanner`, `SectionHeader`, `Input`/`TextArea`, `Select`, `Table`, `Badge`, `AlertBanner`, `Modal` | HIGH |
 | BL-FE-03 | API layer: central `apiFetch()` + TS types + Zod schemas for backend responses (candidates, ranked, job-posts, criteria, call-logs, meetings); Zustand stores | HIGH |
 | BL-FE-04 | App shell: sidebar nav (Overview/Job posts/Shortlist/Candidates/Interviews/Meetings) + top bar + React Router routes + theme toggle + API-key/auth handling | HIGH |
 | BL-FE-05 | Overview screen — stat cards, recruitment funnel, screening-call donut (Recharts), "Needs your attention" block; wire to `/call-stats` + pipeline | HIGH |
@@ -66,3 +65,4 @@ _(18 backend audit items · 13 frontend build items)_
 | ID | Description | Priority | Status |
 |---|---|---|---|
 | BL-FE-01 | Scaffold `frontend/` (Vite + React + TS) + design tokens (slate + growth-green, light/dark) + folder structure | HIGH | COMPLETE 2026-07-08 — build + live render verified |
+| BL-FE-02 | SVG `Icon` set + component library (Button, Card*, PageBanner, SectionHeader, Input/TextArea, Select, Table, Badge, AlertBanner, Modal) | HIGH | COMPLETE 2026-07-08 — build + gallery render verified |
