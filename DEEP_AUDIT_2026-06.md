@@ -359,6 +359,55 @@ Added 2026-07-08. Parts 1-3 audited `410646b` (Jun 24). The team advanced org `h
 ---
 ---
 
+# Part 5 — Re-grounding against the CANONICAL branch `hrhamza` `458c2dd` (2026-07-07)
+
+Added 2026-07-08. Team confirmed **`hrhamza` is the canonical branch**, not `hrfilza`. It is a **12-commit rework** of the audited base (`410646b`) — a substantially different codebase: **LiveKit + Gemini realtime** voice stack (`livekit_agent.py` +681), **structured Pydantic scoring** replacing the 0-100 LLM integer, a new **`criteria_agent.py`** (JD-derived weighted criteria), a custom experience-scoring function, and job-post guardrails. `app.py` +631, `voice_agent.py` +450, `shortlisting_agent.py` +356, `pipeline.py`/`schemas.py`/`call_logs.py` rewritten. Two read-only auditors re-verified the findings against it.
+
+> ⚠️ **Branch divergence:** `hrhamza` does **NOT** contain `hrfilza`'s LinkedIn fix (`a5fe051`). The two branches forked into different products — each has fixes the other lacks. Picking `hrhamza` as canonical **loses F1** unless `a5fe051` is cherry-picked.
+
+## Genuine improvements in the rework ✅
+- **AUD-M01(b) FIXED** — `with_structured_output` + manual score assembly (`shortlisting_agent.py:112,142`; `voice_agent.py:352`); the regex first-digit-run parser is gone (no more "8 out of 10" → 8, no free-integer "output 100").
+- **AUD-M01(c) FIXED** — parse failure no longer silently returns `0` (an invisible auto-reject); it raises / records the error (`shortlist_all_jobs:281`). *This was the compliance-critical half of M01.*
+- **Rubric discreteness** — per-criterion `ge/le`-capped Pydantic steps (`schemas.py:105-206`) replace the overlapping 0-100 bands.
+- **`criteria_agent.py`** — 6-10 JD-derived, importance-weighted criteria (70% of CV score) with a draft→confirm lock; scoring refuses until criteria `confirmed`. Better scoring *semantics* (does not change any gating threshold).
+- **DES-02 PARTIAL** — scoring/persistence consolidated into one `score_and_persist_call` helper (`voice_agent.py:364`).
+- **Kill-switch (partial)** — `ENABLE_AUTO_RETRY` (default off) on the retry loop only; non-PDF poison-pill now marked (`parser_agent.py:430`).
+
+## Still OPEN ❌
+- **All 10 criticals remain OPEN.**
+  - **C01 (LEGAL) OPEN** — `_format_candidate` still emits `Name:/Email:/Education:` into the scoring LLM (`shortlisting_agent.py:45-48`, email again `:136`). Name + school + email = protected-class proxies, still in-context.
+  - **C02 (LEGAL) OPEN** — still fully auto-gated: `_shortlist_loop` auto-launches, `route_after_match` auto-rejects `<70`/auto-invites `≥70`, `route_after_interview` auto-books `≥60` (`pipeline.py:172-209`). The only HITL is on the *job post* + criteria confirmation — never on a candidate advance/reject/call/book. `recommendation="review"` is computed *after* interview+booking already fired and gates nothing.
+  - **C03 (SECURITY) OPEN — now doubled.** The new `/voice/livekit-complete` is **also public + unsigned** (`auth.py:19`, `app.py:591`) — the same forgeable ingress on the new surface; old `/voice/webhook` still reachable (dead Vapi legacy). Idempotency is only a non-atomic `snap.next` check → concurrent duplicates double-process.
+  - **C04 (SPEND) OPEN + new path** — parser still uncapped per page (`parser_agent.py:212`); shortlist/reminder loops still auto-start; no rate-limit; **Gemini realtime up to 1200s/interview, no global cap** (`livekit_agent.py:43,336`).
+  - **C05 OPEN** — no markdown-fence strip; bare `except` upserts a blank candidate (`parser_agent.py:343-364`).
+  - **C06 OPEN** — poison-pill re-launch every 30s on any launch exception; only the non-PDF case was fixed (`app.py:68-77`).
+  - **C07 OPEN** — `calendar_agent.py` untouched (wrong-calendar / naive-vs-aware).
+  - **C08 OPEN** — **zero `create_index` in the whole repo; no `slot_reservations` TTL** (grep-confirmed).
+  - **C09 OPEN** — `ranking_agent.py` untouched (CV-only outranks interviewed).
+  - **C10 OPEN** — `check_same_thread=False` shared SQLite checkpointer under concurrent `to_thread`, no WAL, **no reaper** (`pipeline.py:96`).
+- **Majors:** config-lies/startup-validation OPEN (`config.py` not even changed); **LinkedIn MCP OPEN** (unchanged here — a *regression* vs `hrfilza`); data/integrations OPEN (no retry-backoff, MongoClient sprawl, page-order ≥10); booking/voice PARTIAL (voice consolidated; `calendar`/`booking` untouched). **M02 PARTIAL** — models still unpinned aliases (`gpt-4o`/`gpt-4o-mini`), no calibration, recommendation bands still overlap.
+- **Logic:** **L1, L2, L3 OPEN** (thresholds/bands unchanged — `CALENDAR_THRESHOLD=60` is now used, but for the *book* gate, not the CV gate). **L6 cosmetic-only** (`match` reads `freelance_experience_years` but `PipelineState` never declares/populates it → always `None`; paths still disagree). **L7 PARTIAL** (experience now 10% of CV score, but the `RULE_MIN_EXPERIENCE_YEARS=0 → exp<0` red flag is still dead code). *L4/L5 not re-verified this pass — `call_logs.py` was rewritten (+167); needs a fresh check.*
+- **Design:** **DES-01 WORSE** — a *new* store `initial_screening_logs` added on top of the existing triplication → more fragmentation, more status enums. **DES-03 OPEN** (no reaper).
+- **F1 OPEN** — LinkedIn post-click still commented (`mcp_server.py:195`) while `job_post.py:379` returns `linkedin_posted: True`.
+
+## New issues the rework introduced 🆕
+**LiveKit / security (7):** ① `/voice/livekit-complete` unauthenticated+forgeable · ② **default `devkey`/`secret` LiveKit creds** (`voice_agent.py:38-39`) — anyone mints room tokens if env unset · ③ dev-mode agent **auto-joins every room** (no allowlist → budget burn) · ④ **room token in URL query** (`/interview/{room}?token=`) → lands in logs · ⑤ **plaintext PII interview transcripts on disk**, no retention (`livekit_agent.py:666`) · ⑥ external CDN dep (`cdn.jsdelivr.net`) for `livekit-client` · ⑦ Vapi ingress still live as dead-but-reachable attack surface.
+**Scoring/validity (5):** ① `CandidateEvaluation` schema now dead/unused · ② `_calc_experience_score` awards ~8.3/10 whenever `required_years<=0` (brittle regex) → experience component near-constant/uninformative · ③ CV red flags (`timeline_tenure`, `experience_misrepresentation`, `unprofessional_email`) computed+persisted but **never read** by `recommend()` → decorative · ④ injection guard added to job-post prompt only, not the candidate surface (= the M01(a) gap) · ⑤ `unprofessional_email`/`managerial_experience` scored into the professional component — **new adverse-impact/validity concern**.
+
+## Scoreboard — `hrhamza` `458c2dd`
+| Bucket | Total | Fixed | Partial | Open |
+|--------|------:|------:|--------:|-----:|
+| Criticals (AUD-C) | 10 | 0 | 0 | 10 |
+| Majors (AUD-M) | 6 | 0 | 3 (M01, M02, booking/voice) | 3 |
+| Logic (L) | 7 | 0 | 2 (L6 cosmetic, L7) | 3 verified + 2 unverified (L4/L5) |
+| Design (DES) | 9 | 0 | 1 (DES-02) | DES-01 worse, DES-03 open; rest presumed |
+| Features (F) | 24 | 0 | 0 | F1 confirmed open (regressed); rest presumed |
+
+**Part 5 bottom line:** the `hrhamza` rework made **real progress on scoring integrity** — structured output killed the fragile-parser and silent-0 auto-reject (M01 b/c), the compliance-critical half — but **it is not closer to launch**. Both legal blockers (C01 name-in-scoring, C02 no-human-in-loop) are untouched, every security/spend critical is open, the LiveKit swap **carried C03 straight onto a new unsigned endpoint and added 7 fresh vulns** (default creds, PII-on-disk, token-in-URL), and it **regressed F1** relative to `hrfilza`. Net: two branches have diverged into two half-fixed products that must be reconciled. **Immediate actions:** ① decide branch reconciliation (cherry-pick `a5fe051` LinkedIn fix into `hrhamza`, or merge) · ② the two LEGAL blockers still gate everything · ③ the new LiveKit endpoint + default creds + PII-on-disk are now the top *security* items alongside C03/C04.
+
+---
+---
+
 # Part 3 — Feature Backlog (Completeness Count)
 
 Added 2026-06-29. Every distinct *net-new feature* surfaced by the completeness audit (Part 2-C), de-duplicated and counted, with priority + effort. These are **additive features**, not the in-place fixes to existing code (those are the AUD-*/L*/DES-* findings above).
