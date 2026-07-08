@@ -11,7 +11,7 @@
 
 | Total | Complete | Open |
 | --- | --- | --- |
-| 31 | 12 | 19 |
+| 31 | 13 | 18 |
 
 _(18 backend audit items · 13 frontend build items)_
 
@@ -46,7 +46,6 @@ _(18 backend audit items · 13 frontend build items)_
 
 | ID | Description | Priority |
 |---|---|---|
-| BL-FE-13 | FE Dockerfile + build/deploy (Vite build) + CI | LOW |
 
 ---
 
@@ -66,3 +65,4 @@ _(18 backend audit items · 13 frontend build items)_
 | BL-FE-10 | Meetings — day-grouped scheduled interviews, status pills, Join → /interview/:room, reschedule | MEDIUM | COMPLETE 2026-07-08 — typecheck + live render verified |
 | BL-FE-11 | Interview room — Meet-style dark room + livekit-client (connect/track/controls) scaffold; preview when no server | HIGH | COMPLETE 2026-07-08 — typecheck + live render verified |
 | BL-FE-12 | Polish — responsive breakpoints (sidebar collapse, grids stack, table scroll-containment), dark-theme verified, reduced-motion, a11y (focus-visible + aria-labels) | MEDIUM | COMPLETE 2026-07-08 — build + light/dark/narrow render verified |
+| BL-FE-13 | FE Dockerfile (node build → nginx serve, SPA fallback) + .dockerignore + GitHub Actions CI (typecheck + build) | LOW | COMPLETE 2026-07-08 — CI yaml valid + build verified (docker daemon n/a to build image) |
