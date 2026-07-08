@@ -1,23 +1,23 @@
 import { create } from 'zustand'
-import { getJobPosts } from '../lib/endpoints'
-import type { JobPost } from '../lib/schemas'
+import { getCandidates } from '../lib/endpoints'
+import type { Candidate } from '../lib/schemas'
 
-type JobsState = {
-  jobs: JobPost[]
+type CandidatesState = {
+  candidates: Candidate[]
   loading: boolean
   loaded: boolean
   error?: string
   load: () => Promise<void>
 }
 
-export const useJobs = create<JobsState>((set) => ({
-  jobs: [],
+export const useCandidates = create<CandidatesState>((set) => ({
+  candidates: [],
   loading: false,
   loaded: false,
   load: async () => {
     set({ loading: true, error: undefined })
     try {
-      set({ jobs: await getJobPosts(), loading: false, loaded: true })
+      set({ candidates: await getCandidates(), loading: false, loaded: true })
     } catch (e) {
       set({ loading: false, loaded: true, error: (e as Error).message })
     }

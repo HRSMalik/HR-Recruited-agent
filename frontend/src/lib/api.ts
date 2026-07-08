@@ -1,6 +1,6 @@
 // Central HTTP client — every API call goes through apiFetch().
-// Backend uses X-API-Key auth (verify_api_key); base URL is the FastAPI host
-// (VITE_API_BASE_URL in prod, localhost:8000 in dev).
+// Backend auth is `Authorization: Bearer <API_KEY>` (utils/auth.py). The key
+// comes from VITE_API_KEY (dev) or localStorage; base URL is the FastAPI host.
 
 const BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
 const API_KEY_STORAGE = 'hr_api_key'
@@ -18,18 +18,19 @@ export class ApiError extends Error {
 
 function apiKey(): string {
   try {
-    return localStorage.getItem(API_KEY_STORAGE) || ''
+    return localStorage.getItem(API_KEY_STORAGE) || import.meta.env.VITE_API_KEY || ''
   } catch {
-    return ''
+    return import.meta.env.VITE_API_KEY || ''
   }
 }
 
 export async function apiFetch<T>(path: string, opts: RequestInit = {}): Promise<T> {
+  const key = apiKey()
   const res = await fetch(BASE + path, {
     ...opts,
     headers: {
       'Content-Type': 'application/json',
-      'X-API-Key': apiKey(),
+      ...(key ? { Authorization: `Bearer ${key}` } : {}),
       ...(opts.headers || {}),
     },
   })

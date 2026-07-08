@@ -1,122 +1,92 @@
+import { useEffect } from 'react'
 import {
   PageBanner,
-  Button,
   Card,
-  CardHeader,
-  CardBody,
-  SectionHeader,
+  Table,
   Badge,
+  Icon,
+  EmptyState,
+  type BadgeVariant,
 } from '../components'
+import { useCandidates } from '../stores/useCandidates'
+import { useJobs } from '../stores/useJobs'
+import type { Recommendation } from '../lib/schemas'
 
-// Single-candidate detail. Composed from candidates_info + criteria_scores +
-// interview_insights; sample data until a /candidates/{id} detail endpoint is wired.
-const CRITERIA = [
-  { cn: 'Distributed systems / event-driven', imp: 'Must have', v: 94 },
-  { cn: 'Python + FastAPI depth', imp: 'Must have', v: 90 },
-  { cn: 'Database performance tuning', imp: 'Very important', v: 86 },
-  { cn: 'Cloud / infra (AWS)', imp: 'Important', v: 78 },
-  { cn: 'Domain: fintech', imp: 'Good to have', v: 60 },
-]
-const SKILLS = ['Python', 'FastAPI', 'Kafka', 'PostgreSQL', 'AWS', 'Redis', 'Docker']
+const REC: Record<Recommendation, { variant: BadgeVariant; label: string }> = {
+  strong_yes: { variant: 'strong', label: 'Strong yes' },
+  yes: { variant: 'yes', label: 'Yes' },
+  maybe: { variant: 'neutral', label: 'Maybe' },
+  review: { variant: 'review', label: 'Review' },
+  no: { variant: 'no', label: 'No' },
+}
+
+const initials = (n: string) => n.split(' ').map((p) => p[0]).slice(0, 2).join('')
 
 export default function Candidates() {
+  const load = useCandidates((s) => s.load)
+  const candidates = useCandidates((s) => s.candidates)
+  const loaded = useCandidates((s) => s.loaded)
+  const error = useCandidates((s) => s.error)
+  const loadJobs = useJobs((s) => s.load)
+  const jobs = useJobs((s) => s.jobs)
+
+  useEffect(() => {
+    load()
+    loadJobs()
+  }, [load, loadJobs])
+
+  const jobTitle = (jdId?: string) => (jdId ? jobs.find((j) => j.jd_id === jdId)?.title ?? jdId : '—')
+
   return (
     <div className="page">
-      <PageBanner
-        title="Amara Okafor"
-        subtitle="Senior Backend Engineer · applied 3d ago"
-        actions={<Badge variant="strong">Strong yes</Badge>}
-      />
+      <PageBanner title="Candidates" subtitle={`${candidates.length} candidate${candidates.length === 1 ? '' : 's'}`} />
 
-      <div className="cd-grid">
-        <div className="cd-col">
-          <Card>
-            <CardBody>
-              <div className="cd-head">
-                <span className="av">AO</span>
-                <div className="who">
-                  <div className="nm">Amara Okafor</div>
-                  <div className="mt">amara.okafor@mail.com · +1 (415) 555-0142</div>
-                </div>
-                <div className="score">
-                  <div className="v">90</div>
-                  <div className="l">composite · CV 40% + interview 60%</div>
-                </div>
-              </div>
-              <div className="cd-decide">
-                <Button icon="calendar">Advance to booking</Button>
-                <Button variant="ghost">Hold for review</Button>
-                <Button variant="danger">Reject</Button>
-                <span className="note">AI recommends. A recruiter makes the final call — this decision is logged.</span>
-              </div>
-            </CardBody>
-          </Card>
-
-          <Card>
-            <CardHeader><SectionHeader title="Fit by criterion" /></CardHeader>
-            <CardBody>
-              <div className="cd-crit">
-                {CRITERIA.map((c) => (
-                  <div className="cd-crow" key={c.cn}>
-                    <span className="cn">{c.cn}<span className="imp">{c.imp}</span></span>
-                    <span className="cb"><i style={{ width: `${c.v}%` }} /></span>
-                    <span className="cv">{c.v}</span>
-                  </div>
-                ))}
-              </div>
-            </CardBody>
-          </Card>
-
-          <Card>
-            <CardHeader><SectionHeader title="Interview" /></CardHeader>
-            <CardBody>
-              <div className="cd-insight" style={{ marginBottom: 14 }}>
-                Clear, structured communicator. Strong on idempotency and event ordering; gave a concrete
-                production example of diagnosing a slow query. Slightly light on team-leadership signals.
-              </div>
-              <div className="cd-script">
-                <div className="cd-line ai">
-                  <div className="w">AI INTERVIEWER</div>
-                  <p>How did you handle idempotency when a consumer re-processed an event?</p>
-                </div>
-                <div className="cd-line">
-                  <div className="w">AMARA OKAFOR</div>
-                  <p>We keyed each event by a deterministic id and claimed it in a dedupe table before any side effect.</p>
-                </div>
-              </div>
-            </CardBody>
-          </Card>
-        </div>
-
-        <div className="cd-col">
-          <Card>
-            <CardHeader><SectionHeader title="CV summary" /></CardHeader>
-            <CardBody>
-              <div className="cd-kv">
-                <div className="r"><span className="k">Experience</span><span className="v">6 yrs professional</span></div>
-                <div className="r"><span className="k">Last role</span><span className="v">Sr. Backend Eng · Fintech</span></div>
-                <div className="r"><span className="k">Education</span><span className="v">BSc Computer Science</span></div>
-              </div>
-              <div className="cd-skills">
-                {SKILLS.map((s) => (
-                  <span className="cd-sk" key={s}>{s}</span>
-                ))}
-              </div>
-            </CardBody>
-          </Card>
-          <Card>
-            <CardHeader><SectionHeader title="Screening call" /></CardHeader>
-            <CardBody>
-              <div className="cd-kv">
-                <div className="r"><span className="k">Outcome</span><span className="v" style={{ color: 'var(--accent-text)' }}>Completed</span></div>
-                <div className="r"><span className="k">Duration</span><span className="v">9m 04s</span></div>
-                <div className="r"><span className="k">Interview score</span><span className="v">89</span></div>
-                <div className="r"><span className="k">Red flags</span><span className="v">None</span></div>
-              </div>
-            </CardBody>
-          </Card>
-        </div>
-      </div>
+      <Card>
+        {error ? (
+          <EmptyState icon="alert" title="Couldn't load candidates" hint={error} />
+        ) : !loaded ? (
+          <EmptyState icon="users" title="Loading candidates…" />
+        ) : candidates.length === 0 ? (
+          <EmptyState icon="users" title="No candidates yet" hint="Applicants appear here once their CV is ingested and parsed." />
+        ) : (
+          <Table>
+            <thead>
+              <tr>
+                <th>Candidate</th>
+                <th>Job</th>
+                <th className="r" style={{ width: 80 }}>CV fit</th>
+                <th className="r" style={{ width: 110 }}>Composite</th>
+                <th style={{ width: 130 }}>Recommendation</th>
+              </tr>
+            </thead>
+            <tbody>
+              {candidates.map((c) => (
+                <tr key={c.candidate_id}>
+                  <td>
+                    <div className="sl-cand">
+                      <span className="av">{initials(c.name)}</span>
+                      <div>
+                        <div className="nm">{c.name}</div>
+                        {c.email && <div className="em">{c.email}</div>}
+                      </div>
+                    </div>
+                  </td>
+                  <td style={{ color: 'var(--text-2)' }}>{jobTitle(c.jd_id)}</td>
+                  <td className="r num">{c.fit_percent ?? '—'}</td>
+                  <td className="r num">{c.composite_score != null ? Math.round(c.composite_score) : '—'}</td>
+                  <td>
+                    {c.recommendation ? (
+                      <Badge variant={REC[c.recommendation].variant}>{REC[c.recommendation].label}</Badge>
+                    ) : (
+                      <span className="sl-none"><Icon name="clock" size={13} /> Not ranked</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        )}
+      </Card>
     </div>
   )
 }

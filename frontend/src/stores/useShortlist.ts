@@ -6,6 +6,7 @@ type ShortlistState = {
   jdId?: string
   candidates: RankedCandidate[]
   loading: boolean
+  loaded: boolean
   error?: string
   load: (jdId: string) => Promise<void>
   reRank: (weights: { cv: number; interview: number }) => Promise<void>
@@ -14,12 +15,13 @@ type ShortlistState = {
 export const useShortlist = create<ShortlistState>((set, get) => ({
   candidates: [],
   loading: false,
+  loaded: false,
   load: async (jdId) => {
     set({ loading: true, error: undefined, jdId })
     try {
-      set({ candidates: await getRankedCandidates(jdId), loading: false })
+      set({ candidates: await getRankedCandidates(jdId), loading: false, loaded: true })
     } catch (e) {
-      set({ loading: false, error: (e as Error).message })
+      set({ loading: false, loaded: true, error: (e as Error).message })
     }
   },
   reRank: async (weights) => {

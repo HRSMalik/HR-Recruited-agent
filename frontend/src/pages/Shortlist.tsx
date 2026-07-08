@@ -8,10 +8,13 @@ import {
   Icon,
   Modal,
   Input,
+  Select,
+  EmptyState,
   type BadgeVariant,
 } from '../components'
 import { useShortlist } from '../stores/useShortlist'
-import type { RankedCandidate, Recommendation } from '../lib/schemas'
+import { useJobs } from '../stores/useJobs'
+import type { Recommendation } from '../lib/schemas'
 
 const REC: Record<Recommendation, { variant: BadgeVariant; label: string }> = {
   strong_yes: { variant: 'strong', label: 'Strong yes' },
@@ -20,15 +23,6 @@ const REC: Record<Recommendation, { variant: BadgeVariant; label: string }> = {
   review: { variant: 'review', label: 'Review' },
   no: { variant: 'no', label: 'No' },
 }
-
-const DEMO: RankedCandidate[] = [
-  { candidate_id: '1', name: 'Amara Okafor', email: 'amara.okafor@mail.com', fit_percent: 92, interview_score: 89, composite_score: 90, recommendation: 'strong_yes', red_flags: [], rank: 1 },
-  { candidate_id: '2', name: 'Diego Martins', email: 'd.martins@mail.com', fit_percent: 85, interview_score: 83, composite_score: 84, recommendation: 'strong_yes', red_flags: [], rank: 2 },
-  { candidate_id: '3', name: 'Priya Nair', email: 'priya.nair@mail.com', fit_percent: 78, interview_score: 75, composite_score: 76, recommendation: 'yes', red_flags: [], rank: 3 },
-  { candidate_id: '4', name: 'Lucas Bianchi', email: 'lucas.b@mail.com', fit_percent: 81, interview_score: 68, composite_score: 73, recommendation: 'review', red_flags: [{ type: 'tenure', label: 'Tenure gap' }], rank: 4 },
-  { candidate_id: '5', name: 'Sara Haddad', email: 's.haddad@mail.com', fit_percent: 72, interview_score: 64, composite_score: 67, recommendation: 'yes', red_flags: [], rank: 5 },
-  { candidate_id: '6', name: 'Wei Chen', email: 'wei.chen@mail.com', fit_percent: 69, interview_score: 58, composite_score: 62, recommendation: 'review', red_flags: [{ type: 'claim', label: 'Unverified claim' }], rank: 6 },
-]
 
 type Filter = 'all' | 'strong_yes' | 'yes' | 'review' | 'flags'
 const FILTERS: { key: Filter; label: string }[] = [
@@ -42,27 +36,43 @@ const FILTERS: { key: Filter; label: string }[] = [
 const initials = (n: string) => n.split(' ').map((p) => p[0]).slice(0, 2).join('')
 
 export default function Shortlist() {
+  const loadJobs = useJobs((s) => s.load)
+  const jobs = useJobs((s) => s.jobs)
   const load = useShortlist((s) => s.load)
   const reRank = useShortlist((s) => s.reRank)
-  const stored = useShortlist((s) => s.candidates)
+  const candidates = useShortlist((s) => s.candidates)
+  const loaded = useShortlist((s) => s.loaded)
+  const error = useShortlist((s) => s.error)
+  const [selected, setSelected] = useState('')
   const [filter, setFilter] = useState<Filter>('all')
   const [rrOpen, setRrOpen] = useState(false)
   const [cv, setCv] = useState(40)
   const [iv, setIv] = useState(60)
 
   useEffect(() => {
-    load('sbe')
-  }, [load])
+    loadJobs()
+  }, [loadJobs])
 
-  const candidates = stored.length ? stored : DEMO
+  useEffect(() => {
+    if (jobs.length && !jobs.some((j) => j.jd_id === selected)) {
+      setSelected(jobs[0].jd_id)
+    }
+  }, [jobs, selected])
+
+  useEffect(() => {
+    if (selected) load(selected)
+  }, [selected, load])
+
   const rows = candidates.filter((c) =>
     filter === 'all' ? true : filter === 'flags' ? c.red_flags.length > 0 : c.recommendation === filter,
   )
+  const recommended = candidates.filter((c) => c.recommendation === 'strong_yes' || c.recommendation === 'yes').length
+  const selectedTitle = jobs.find((j) => j.jd_id === selected)?.title ?? 'Shortlist'
 
   const applyReRank = () => {
     setRrOpen(false)
     reRank({ cv: cv / 100, interview: iv / 100 }).catch(() => {
-      /* sample mode / offline */
+      /* surfaced via store error on reload */
     })
   }
 
@@ -70,8 +80,20 @@ export default function Shortlist() {
     <div className="page">
       <PageBanner
         title="Shortlist"
-        subtitle="Senior Backend Engineer · 41 scored · 9 recommended"
-        actions={<Button variant="ghost" icon="rerank" onClick={() => setRrOpen(true)}>Re-rank</Button>}
+        subtitle={`${selectedTitle} · ${candidates.length} scored · ${recommended} recommended`}
+        actions={
+          <>
+            {jobs.length > 0 && (
+              <Select
+                aria-label="Select job"
+                value={selected}
+                onChange={(e) => setSelected(e.target.value)}
+                options={jobs.map((j) => ({ value: j.jd_id, label: j.title }))}
+              />
+            )}
+            <Button variant="ghost" icon="rerank" onClick={() => setRrOpen(true)} disabled={!candidates.length}>Re-rank</Button>
+          </>
+        }
       />
 
       <div className="sl-filters">
@@ -84,61 +106,73 @@ export default function Shortlist() {
       </div>
 
       <Card>
-        <Table>
-          <thead>
-            <tr>
-              <th style={{ width: 44 }}>#</th>
-              <th>Candidate</th>
-              <th className="r" style={{ width: 64 }}>CV</th>
-              <th className="r" style={{ width: 84 }}>Interview</th>
-              <th className="r" style={{ width: 140 }}>Composite</th>
-              <th style={{ width: 130 }}>Recommendation</th>
-              <th>Flags</th>
-              <th style={{ width: 44 }}></th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((c) => (
-              <tr key={c.candidate_id}>
-                <td className="sl-rk">{c.rank}</td>
-                <td>
-                  <div className="sl-cand">
-                    <span className="av">{initials(c.name)}</span>
-                    <div>
-                      <div className="nm">{c.name}</div>
-                      {c.email && <div className="em">{c.email}</div>}
-                    </div>
-                  </div>
-                </td>
-                <td className="r num">{c.fit_percent ?? '—'}</td>
-                <td className="r num">{c.interview_score ?? '—'}</td>
-                <td className="r">
-                  <div className="sl-comp">
-                    <span className="bar"><i style={{ width: `${Math.min(100, c.composite_score)}%` }} /></span>
-                    <b>{Math.round(c.composite_score)}</b>
-                  </div>
-                </td>
-                <td>
-                  <Badge variant={REC[c.recommendation].variant}>{REC[c.recommendation].label}</Badge>
-                </td>
-                <td>
-                  {c.red_flags.length ? (
-                    <div className="sl-flags">
-                      {c.red_flags.map((f) => (
-                        <span className="sl-flag" key={f.type}><Icon name="flag" />{f.label}</span>
-                      ))}
-                    </div>
-                  ) : (
-                    <span className="sl-none">—</span>
-                  )}
-                </td>
-                <td>
-                  <button className="sl-view" aria-label={`View ${c.name}`}><Icon name="chevronRight" /></button>
-                </td>
+        {error ? (
+          <EmptyState icon="alert" title="Couldn't load the shortlist" hint={error} />
+        ) : !loaded ? (
+          <EmptyState icon="users" title="Loading shortlist…" />
+        ) : candidates.length === 0 ? (
+          <EmptyState
+            icon="users"
+            title="No ranked candidates yet"
+            hint="Candidates are ranked automatically once they complete screening. Ranked results for this job will appear here."
+          />
+        ) : (
+          <Table>
+            <thead>
+              <tr>
+                <th style={{ width: 44 }}>#</th>
+                <th>Candidate</th>
+                <th className="r" style={{ width: 64 }}>CV</th>
+                <th className="r" style={{ width: 84 }}>Interview</th>
+                <th className="r" style={{ width: 140 }}>Composite</th>
+                <th style={{ width: 130 }}>Recommendation</th>
+                <th>Flags</th>
+                <th style={{ width: 44 }}></th>
               </tr>
-            ))}
-          </tbody>
-        </Table>
+            </thead>
+            <tbody>
+              {rows.map((c) => (
+                <tr key={c.candidate_id}>
+                  <td className="sl-rk">{c.rank}</td>
+                  <td>
+                    <div className="sl-cand">
+                      <span className="av">{initials(c.name)}</span>
+                      <div>
+                        <div className="nm">{c.name}</div>
+                        {c.email && <div className="em">{c.email}</div>}
+                      </div>
+                    </div>
+                  </td>
+                  <td className="r num">{c.fit_percent ?? '—'}</td>
+                  <td className="r num">{c.interview_score ?? '—'}</td>
+                  <td className="r">
+                    <div className="sl-comp">
+                      <span className="bar"><i style={{ width: `${Math.min(100, c.composite_score)}%` }} /></span>
+                      <b>{Math.round(c.composite_score)}</b>
+                    </div>
+                  </td>
+                  <td>
+                    <Badge variant={REC[c.recommendation].variant}>{REC[c.recommendation].label}</Badge>
+                  </td>
+                  <td>
+                    {c.red_flags.length ? (
+                      <div className="sl-flags">
+                        {c.red_flags.map((f) => (
+                          <span className="sl-flag" key={f.type}><Icon name="flag" />{f.label}</span>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="sl-none">—</span>
+                    )}
+                  </td>
+                  <td>
+                    <button className="sl-view" aria-label={`View ${c.name}`}><Icon name="chevronRight" /></button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        )}
       </Card>
 
       <Modal

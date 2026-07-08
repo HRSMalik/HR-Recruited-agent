@@ -26,6 +26,20 @@ export const RankedCandidate = z.object({
 })
 export type RankedCandidate = z.infer<typeof RankedCandidate>
 
+// A candidate as stored in candidates_info (from GET /candidates). Unlike a
+// RankedCandidate, scores/recommendation may be absent until the pipeline ranks it.
+export const Candidate = z.object({
+  candidate_id: z.string(),
+  name: z.string(),
+  email: z.string().optional(),
+  jd_id: z.string().optional(),
+  fit_percent: z.number().nullable().optional(),
+  composite_score: z.number().nullable().optional(),
+  recommendation: Recommendation.optional(),
+  status: z.string().optional(),
+})
+export type Candidate = z.infer<typeof Candidate>
+
 export const JobPost = z.object({
   jd_id: z.string(),
   title: z.string(),

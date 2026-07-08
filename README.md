@@ -32,4 +32,19 @@ VAPI_DEFAULT_COUNTRY_CODE=
 
 after that enable google developer drive api from google console and place the credential.json file in a folder called .credentials
 
-finally run the app.py file like so "uvicorn app:app"
+finally run the api entrypoint like so "uvicorn api:app --port 8000"
+
+## Frontend (recruiter dashboard)
+
+The React + TypeScript + Vite dashboard lives in `frontend/`. Run it against the backend:
+
+    cd frontend
+    npm install
+    npm run dev            # http://localhost:5173
+
+Point it at the API via `frontend/.env.local`:
+
+    VITE_API_BASE_URL=http://localhost:8000
+    VITE_API_KEY=<must match the backend API_KEY>
+
+The FE authenticates with `Authorization: Bearer <VITE_API_KEY>`, so that key must equal the backend `API_KEY`, and the backend `CORS_ALLOWED_ORIGINS` must include `http://localhost:5173`.

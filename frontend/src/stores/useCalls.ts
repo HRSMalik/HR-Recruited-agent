@@ -6,6 +6,7 @@ type CallsState = {
   logs: CallLog[]
   stats?: CallStats
   loading: boolean
+  loaded: boolean
   error?: string
   load: () => Promise<void>
   retry: (logId: string) => Promise<void>
@@ -15,13 +16,14 @@ type CallsState = {
 export const useCalls = create<CallsState>((set, get) => ({
   logs: [],
   loading: false,
+  loaded: false,
   load: async () => {
     set({ loading: true, error: undefined })
     try {
       const [logs, stats] = await Promise.all([getCallLogs(), getCallStats()])
-      set({ logs, stats, loading: false })
+      set({ logs, stats, loading: false, loaded: true })
     } catch (e) {
-      set({ loading: false, error: (e as Error).message })
+      set({ loading: false, loaded: true, error: (e as Error).message })
     }
   },
   retry: async (logId) => {
