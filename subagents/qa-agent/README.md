@@ -138,3 +138,4 @@ Flows that benefit from isolation are also exposed as Claude Code subagents in `
 - `shared/ai-testing-standards.md` — ISTQB CT-AI / ISO 29119-11 / NIST AI RMF / OWASP LLM Top-10 crosswalk (the 60-ai-ml anchor)
 - `shared/non-determinism-strategy.md` — run-N / pass-rate / "temp=0 ≠ deterministic" gating for LLM flows
 - `shared/hermeticity-and-test-sizing.md` — hermeticity + test sizing + order-independence (flake prevention)
+- `shared/field-defect-patterns.md` — **growing catalog of field-proven UI/form defect patterns** distilled from real QA-filed bugs (the concrete "always try this" probes); applied by smoke (⚡ subset), exploratory/usability/negative-boundary (full), and regression (`First seen` patterns). Append new patterns as bugs reveal them.
