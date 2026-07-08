@@ -184,3 +184,34 @@
 .sl-view:hover{color:var(--accent)}
 .sl-rk{color:var(--text-muted);font-variant-numeric:tabular-nums;font-weight:600}
 .rr-weights{display:flex;flex-direction:column;gap:14px}
+
+/* Candidate detail (BL-FE-08) */
+.cd-grid{display:grid;grid-template-columns:1.6fr 1fr;gap:16px;align-items:start}
+.cd-col{display:flex;flex-direction:column;gap:16px}
+.cd-head{display:flex;gap:16px;align-items:flex-start}
+.cd-head .av{width:56px;height:56px;border-radius:50%;background:var(--accent-weak);color:var(--accent-text);display:flex;align-items:center;justify-content:center;font-size:19px;font-weight:600;flex-shrink:0}
+.cd-head .who .nm{font-size:20px;font-weight:600;letter-spacing:-.02em}
+.cd-head .who .mt{color:var(--text-muted);font-size:13px;margin-top:2px}
+.cd-head .score{margin-left:auto;text-align:right}
+.cd-head .score .v{font-size:34px;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-.02em;line-height:1}
+.cd-head .score .l{font-size:11px;color:var(--text-muted);margin-top:3px}
+.cd-decide{display:flex;gap:10px;margin-top:20px;padding-top:18px;border-top:1px solid var(--border);align-items:center}
+.cd-decide .note{color:var(--text-muted);font-size:12px;margin-left:auto;max-width:230px;text-align:right}
+.cd-crit{display:flex;flex-direction:column;gap:14px}
+.cd-crow{display:grid;grid-template-columns:1fr 130px 44px;align-items:center;gap:14px}
+.cd-crow .cn{font-size:13px;color:var(--text-2)}
+.cd-crow .cn .imp{font-size:11px;color:var(--text-muted);margin-left:8px;border:1px solid var(--border-2);padding:1px 7px;border-radius:6px}
+.cd-crow .cb{height:6px;border-radius:4px;background:var(--track);overflow:hidden}
+.cd-crow .cb i{display:block;height:100%;background:var(--accent);border-radius:4px}
+.cd-crow .cv{text-align:right;font-variant-numeric:tabular-nums;font-weight:600;font-size:13px}
+.cd-script{display:flex;flex-direction:column;gap:12px}
+.cd-line .w{font-size:11px;font-weight:700;letter-spacing:.03em;margin-bottom:3px;color:var(--text-muted)}
+.cd-line.ai .w{color:var(--accent-text)}
+.cd-line p{font-size:13px;line-height:1.5;color:var(--text-2);background:var(--surface-2);border:1px solid var(--border);padding:9px 12px;border-radius:8px}
+.cd-insight{font-size:13px;color:var(--text-2);line-height:1.55}
+.cd-kv{display:flex;flex-direction:column;gap:12px}
+.cd-kv .r{display:flex;justify-content:space-between;font-size:13px}
+.cd-kv .r .k{color:var(--text-muted)}
+.cd-kv .r .v{font-weight:500}
+.cd-skills{display:flex;flex-wrap:wrap;gap:7px;margin-top:4px}
+.cd-sk{font-size:12px;color:var(--text-2);background:var(--surface-2);border:1px solid var(--border);padding:4px 10px;border-radius:6px}

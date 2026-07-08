@@ -11,7 +11,7 @@
 
 | Total | Complete | Open |
 | --- | --- | --- |
-| 31 | 7 | 24 |
+| 31 | 8 | 23 |
 
 _(18 backend audit items · 13 frontend build items)_
 
@@ -46,7 +46,6 @@ _(18 backend audit items · 13 frontend build items)_
 
 | ID | Description | Priority |
 |---|---|---|
-| BL-FE-08 | Candidate detail — fit by criterion, interview insights + transcript, CV summary, decision actions (advance/hold/reject, logged); wire to candidate data | MEDIUM |
 | BL-FE-09 | Interviews (call ops) — stat tiles, call-log table, outcomes donut, retry queue; wire to `/call-logs` + `/call-stats` + retry/close | MEDIUM |
 | BL-FE-10 | Meetings — day-grouped scheduled interviews, status, Join → room, reschedule; wire to bookings/meetings | MEDIUM |
 | BL-FE-11 | Interview room — `livekit-client` integration (AI-audio tile + candidate camera + live transcript + mic/cam/captions/leave + question progress); wire to `/interview/{room}` + LiveKit token | HIGH |
@@ -66,3 +65,4 @@ _(18 backend audit items · 13 frontend build items)_
 | BL-FE-05 | Overview — stat cards, funnel, screening-call donut (Recharts), "Needs your attention"; calls store + sample fallback | HIGH | COMPLETE 2026-07-08 — typecheck + live render verified |
 | BL-FE-06 | Job posts + criteria editor (editable rows, importance selects, draft→confirm/lock); jobs store + criteria endpoints | HIGH | COMPLETE 2026-07-08 — typecheck + live render verified |
 | BL-FE-07 | Shortlist — ranked table (composite bars, recommendation badges, red-flag chips), filters, re-rank modal; shortlist store | HIGH | COMPLETE 2026-07-08 — typecheck + live render verified |
+| BL-FE-08 | Candidate detail — fit by criterion, interview insights + transcript, CV summary, human decision actions (logged) | MEDIUM | COMPLETE 2026-07-08 — typecheck + live render verified |
