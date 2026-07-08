@@ -1,0 +1,83 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Design tokens — refined recruiter dashboard ──────────────────────────
+   Neutral slate + a single growth-green accent (HR: growth / people).
+   Light is the default; dark is applied via [data-theme="dark"] (BL-FE-04
+   toggle) and honoured from the OS preference. Colours come from these vars
+   (inline / var()), never hard-coded in components. */
+:root {
+  --bg: #fafafa;
+  --surface: #ffffff;
+  --surface-2: #f7f7f8;
+  --text: #18181b;
+  --text-2: #52525b;
+  --text-muted: #8a8f98;
+  --border: #ececee;
+  --border-2: #e0e0e3;
+  --track: #eeeef0;
+
+  --accent: #059669;
+  --accent-hover: #047857;
+  --accent-weak: #ecfdf5;
+  --accent-text: #065f46;
+
+  /* recommendation / status — AA-safe text on its own tint */
+  --strong-bg: #ecfdf5; --strong-tx: #065f46;
+  --yes-bg: #f1f5f2;    --yes-tx: #3f6b4e;
+  --review-bg: #fbf3e2; --review-tx: #8a6a1e;
+  --no-bg: #fbeceb;     --no-tx: #a2473f;
+  --neutral-bg: #f1f1f3; --neutral-tx: #52525b;
+
+  --radius: 10px;
+  --radius-sm: 8px;
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.05);
+
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, sans-serif;
+}
+
+:root[data-theme='dark'] {
+  --bg: #0b1017;
+  --surface: #131a24;
+  --surface-2: #1a222e;
+  --text: #e8edf3;
+  --text-2: #aab4c0;
+  --text-muted: #7c8896;
+  --border: #232c38;
+  --border-2: #2d3745;
+  --track: #1a222e;
+
+  --accent: #10b981;
+  --accent-hover: #34d399;
+  --accent-weak: #0f2b22;
+  --accent-text: #6ee7b7;
+
+  --strong-bg: #0f2b22; --strong-tx: #6ee7b7;
+  --yes-bg: #16241d;    --yes-tx: #86c9a3;
+  --review-bg: #2a2210; --review-tx: #e8c579;
+  --no-bg: #2a1719;     --no-tx: #f0a3a0;
+  --neutral-bg: #1a222e; --neutral-tx: #aab4c0;
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    line-height: 1.45;
+  }
+  /* keyboard focus is always visible (WCAG 2.4.7) */
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+}

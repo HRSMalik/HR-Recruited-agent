@@ -11,7 +11,9 @@
 
 | Total | Complete | Open |
 | --- | --- | --- |
-| 18 | 0 | 18 |
+| 31 | 1 | 30 |
+
+_(18 backend audit items · 13 frontend build items)_
 
 ---
 
@@ -38,10 +40,29 @@
 | BL-17 | Reconcile `hrfilza`/`hrhamza` divergence + add branch protection on `main` | MEDIUM |
 | BL-18 | Re-establish hermetic test suite + CI gate (tests were deleted `854396a`) | MEDIUM |
 
+### Frontend build — recruiter dashboard (React + TS + Vite)
+
+> Builds the approved refined design (`designs/recruiter-dashboard/` — growth-green, SVG icons, whitespace-first) against the FastAPI backend, in `frontend/`. Ordered foundation-first; each item is independently buildable + verifiable and traces to a design screen or a CLAUDE.md FE convention.
+
+| ID | Description | Priority |
+|---|---|---|
+| BL-FE-02 | SVG `Icon` set (no emoji) + the standard component library: `Button`, `Card`/`CardHeader`/`CardBody`/`CardFooter`, `PageBanner`, `SectionHeader`, `Input`/`TextArea`, `Select`, `Table`, `Badge`, `AlertBanner`, `Modal` | HIGH |
+| BL-FE-03 | API layer: central `apiFetch()` + TS types + Zod schemas for backend responses (candidates, ranked, job-posts, criteria, call-logs, meetings); Zustand stores | HIGH |
+| BL-FE-04 | App shell: sidebar nav (Overview/Job posts/Shortlist/Candidates/Interviews/Meetings) + top bar + React Router routes + theme toggle + API-key/auth handling | HIGH |
+| BL-FE-05 | Overview screen — stat cards, recruitment funnel, screening-call donut (Recharts), "Needs your attention" block; wire to `/call-stats` + pipeline | HIGH |
+| BL-FE-06 | Job posts + criteria editor — list, create (JD generate/review), criteria editor (generate → edit importance → confirm/lock); wire to `/job-posts` + `/jobs/{id}/criteria/*` | HIGH |
+| BL-FE-07 | Shortlist — ranked table (composite, recommendation, red flags), filters, re-rank weights; wire to `/ranked-candidates` + `/rerank` | HIGH |
+| BL-FE-08 | Candidate detail — fit by criterion, interview insights + transcript, CV summary, decision actions (advance/hold/reject, logged); wire to candidate data | MEDIUM |
+| BL-FE-09 | Interviews (call ops) — stat tiles, call-log table, outcomes donut, retry queue; wire to `/call-logs` + `/call-stats` + retry/close | MEDIUM |
+| BL-FE-10 | Meetings — day-grouped scheduled interviews, status, Join → room, reschedule; wire to bookings/meetings | MEDIUM |
+| BL-FE-11 | Interview room — `livekit-client` integration (AI-audio tile + candidate camera + live transcript + mic/cam/captions/leave + question progress); wire to `/interview/{room}` + LiveKit token | HIGH |
+| BL-FE-12 | Polish + states + a11y + responsive — loading/empty/error states, `:focus-visible`, WCAG AA, breakpoints, dark theme; design-agent verify pass | MEDIUM |
+| BL-FE-13 | FE Dockerfile + build/deploy (Vite build) + CI | LOW |
+
 ---
 
 ## Completed
 
 | ID | Description | Priority | Status |
 |---|---|---|---|
-| — | (none yet) | — | — |
+| BL-FE-01 | Scaffold `frontend/` (Vite + React + TS) + design tokens (slate + growth-green, light/dark) + folder structure | HIGH | COMPLETE 2026-07-08 — build + live render verified |
