@@ -147,7 +147,7 @@
 - **Expected:** every visible interactive control performs its action, or is visibly disabled with a reason.
 - **Defect signal:** an icon/button that looks clickable is a no-op — no handler, a missing FE method, or a silently-failing action (the clock icon dead in every module; Edit calls a missing method).
 - **Applies to:** every icon-button and action control.
-- **First seen:** REZ-394 + REZ-404 (clock/time icon dead across modules), REZ-395 (Edit → missing frontend method).
+- **First seen:** REZ-394 + REZ-404 (clock/time icon dead across modules), REZ-395 (Edit → missing frontend method). *Regression:* BL-BUG-22 (REZ-449 search clear-× visually present + `cursor:pointer` but **unclickable** — computed `pointer-events:none`, so a real click passes through; JS-click works — always check a control is hit-testable, not just present).
 
 ### P21 · Error-state layout stability
 - **Probe:** trigger inline validation errors on a form and watch the layout as messages appear and disappear; also check required-asterisk styling/alignment across fields.
@@ -169,6 +169,13 @@
 - **Defect signal:** a stray comma / separator / label emitted from a null inside a joined string (a lone "," shown when no adjuster is assigned).
 - **Applies to:** every joined/concatenated or optional-value display.
 - **First seen:** REZ-429 (comma shown when no adjuster assigned).
+
+### P24 · Validation blocks with no visible feedback
+- **Probe:** submit a form/step with an invalid or incomplete field (empty required, out-of-range, cross-field conflict) — *especially inside nested/array field groups* (repeatable rows, "add another" blocks, multi-step wizards). Watch for BOTH: does advance get blocked, AND does an inline error actually render (text + `aria-invalid`)?
+- **Expected:** a blocked submit always shows WHY — an inline error on the offending field (and/or a summary). The user is never stuck with a form that silently refuses to proceed.
+- **Defect signal:** the form/step silently refuses to advance (or a mutation no-ops) with **no error text and no `aria-invalid`** — the error is set in state but never renders, typically because the display resolves the error path wrong (e.g. a **field-array error looked up with a flat key** — `errors[`${prefix}.field`]` — instead of the nested `errors.arr[i].field`). Discriminate against a working sibling: a single-level section shows its error while the nested-array section shows none → confirms the path bug.
+- **Applies to:** every validated form; highest-risk on field-arrays / repeatable rows / multi-step wizards where error paths are nested. Distinct from **P8** (error shows but is poorly worded/placed) and **P13** (a mutation lies about succeeding) — here the block is *correct* but *invisible*.
+- **First seen:** BL-BUG-23 (third-party vehicle validation errors + the BL-BUG-07 VIN/plate cross-check inline error never render — `VehicleBlock` reads flat `errors?.[prefix]` vs RHF's nested `errors.thirdPartyVehicles[i]`; user blocked on intake with zero feedback).
 
 ---
 
