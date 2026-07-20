@@ -36,7 +36,7 @@
 - **Expected:** invalid values are rejected with an inline validation message *before* save; valid ranges enforced.
 - **Defect signal:** an invalid/negative value is accepted and saved with no validation.
 - **Applies to:** every numeric field (amounts, counts, years, ages).
-- **First seen:** REZ-329. *Regressions:* REZ-393, REZ-438 (invalid model number), REZ-447 (cheque no. / amount).
+- **First seen:** REZ-329. *Regressions:* REZ-393, REZ-438 (invalid model number), REZ-447 (cheque no. / amount), REZ-464 (change-password FE validation missing).
 
 ### P3 · Notification behind a modal (stacking / top layer)
 - **Probe:** open a modal/dialog, then trigger a success / warning / error notification *while the modal is still open* (submit inside it, or fire an action that toasts).
@@ -71,7 +71,7 @@
 - **Expected:** the user sees the human-facing identifier (e.g. a formatted number like `CCA-2026-000123`), never the internal UUID/DB `_id`.
 - **Defect signal:** an internal ID leaks into user-facing text (wrong field mapping).
 - **Applies to:** every place a record is named to the user.
-- **First seen:** REZ-321 (Claim ID shown instead of Claim Number after delete). *Regressions:* REZ-399 (notification), REZ-408 (Settings), REZ-436.
+- **First seen:** REZ-321 (Claim ID shown instead of Claim Number after delete). *Regressions:* REZ-399 (notification), REZ-408 (Settings), REZ-436, REZ-457 (payment-approve). *(sibling: wrong ACTOR recorded in an audit trail — REZ-468 Closure Audit — same "identity mapped wrong" family.)*
 
 ### P8 · Error-message quality, format & placement
 - **Probe:** trigger validation and API errors (empty required field, bad format, server 4xx). Read the message.
@@ -103,14 +103,14 @@
 - **Expected:** the label always reflects the record's true current state; a detail view opens on the record's *current* stage.
 - **Defect signal:** a Closed claim shows "Open", an inactive carrier shows the wrong status message, the stage name is wrong, or details always land on stage 1 regardless of progress.
 - **Applies to:** every status pill, stage stepper, and lifecycle label.
-- **First seen:** REZ-401 (Closed shows Open), REZ-431 (inactive-carrier message), REZ-448 (wrong stage name), REZ-444 (always opens on Intake).
+- **First seen:** REZ-401 (Closed shows Open), REZ-431 (inactive-carrier message), REZ-448 (wrong stage name), REZ-444 (always opens on Intake). *Regression:* REZ-462 (a newly-created user shows "Inactive" instead of "Invited").
 
 ### P15 · Invalid action offered in a state where it can't apply
 - **Probe:** for each item with a lifecycle state (expired invite, inactive carrier, closed claim, withdrawn form), open its action menu / row controls and read which actions are offered.
 - **Expected:** only actions valid for the current state are shown/enabled; state-inappropriate actions are hidden or disabled.
 - **Defect signal:** an action offered that cannot apply — "Cancel Invite" on an already-expired invite, "Reactivate Staff" on an inactive carrier.
 - **Applies to:** every row/entity action menu whose options depend on state.
-- **First seen:** REZ-406 (Cancel Invite on expired), REZ-430 (Reactivate on inactive carrier).
+- **First seen:** REZ-406 (Cancel Invite on expired), REZ-430 (Reactivate on inactive carrier). *Regression:* REZ-473 (Reactivate button shown on a PENDING-status record).
 
 ### P16 · Conditional / dependent-field validation
 - **Probe:** change the controlling field (payment method, claimant age, doc type) and re-check which dependent fields are required/validated. Then enter a *valid* value in a field that showed an error and confirm the error clears.
@@ -168,7 +168,7 @@
 - **Expected:** empty values render cleanly — blank, an em dash, or "None" — with no orphaned punctuation.
 - **Defect signal:** a stray comma / separator / label emitted from a null inside a joined string (a lone "," shown when no adjuster is assigned).
 - **Applies to:** every joined/concatenated or optional-value display.
-- **First seen:** REZ-429 (comma shown when no adjuster assigned).
+- **First seen:** REZ-429 (comma shown when no adjuster assigned). *Regression:* REZ-459 (comma shown instead of a dash when no actions are available).
 
 ### P24 · Validation blocks with no visible feedback
 - **Probe:** submit a form/step with an invalid or incomplete field (empty required, out-of-range, cross-field conflict) — *especially inside nested/array field groups* (repeatable rows, "add another" blocks, multi-step wizards). Watch for BOTH: does advance get blocked, AND does an inline error actually render (text + `aria-invalid`)?
@@ -176,6 +176,36 @@
 - **Defect signal:** the form/step silently refuses to advance (or a mutation no-ops) with **no error text and no `aria-invalid`** — the error is set in state but never renders, typically because the display resolves the error path wrong (e.g. a **field-array error looked up with a flat key** — `errors[`${prefix}.field`]` — instead of the nested `errors.arr[i].field`). Discriminate against a working sibling: a single-level section shows its error while the nested-array section shows none → confirms the path bug.
 - **Applies to:** every validated form; highest-risk on field-arrays / repeatable rows / multi-step wizards where error paths are nested. Distinct from **P8** (error shows but is poorly worded/placed) and **P13** (a mutation lies about succeeding) — here the block is *correct* but *invisible*.
 - **First seen:** BL-BUG-23 (third-party vehicle validation errors + the BL-BUG-07 VIN/plate cross-check inline error never render — `VehicleBlock` reads flat `errors?.[prefix]` vs RHF's nested `errors.thirdPartyVehicles[i]`; user blocked on intake with zero feedback).
+
+> **Batch 3 (appended 2026-07-20).** P25–P28 distilled from the real QA tester's REZ-454→REZ-475 filings. Standout: P26 (role-based action/visibility parity) is the highest-frequency new class — 4 tickets in one batch.
+
+### P25 · Control misalignment within a toolbar / filter / modal row
+- **Probe:** glance at every button/icon that sits in a ROW with siblings — filter bars, table toolbars, modal action rows, "sent invite" / copy-link modals. Check vertical + horizontal alignment against its row-mates.
+- **Expected:** controls align to a shared baseline / grid; a button is centered in its row, not offset high/low or crowding a neighbor.
+- **Defect signal:** a Clear/Copy/action button is misaligned with the filters or fields beside it (off-baseline, cramped, overflowing its row).
+- **Applies to:** filter bars, table toolbars, modal footers, any horizontal control cluster. (Sibling of **P4** — that's *duplicate/ambiguous* chrome icons; this is *misplaced* ones.)
+- **First seen:** REZ-461 (Clear button misaligned with the staff-page filters), REZ-465 (Copy button misaligned on the sent-invite modal).
+
+### P26 · Role-based action / visibility parity
+- **Probe:** for each user role (super_admin, admin, manager, adjuster), walk the same screens and compare which **actions** (buttons, menu items) and **data** (assigned adjuster, dashboards, queues) are available. Especially: an admin acting on **users/records they created**, a manager's dashboard vs an admin's, and any "Login As" / lower-tier view.
+- **Expected:** equivalent roles get the actions + visibility their permissions grant — no action is silently missing for a role that should have it, and no data a role should see is hidden (and vice-versa: nothing a role should NOT have leaks in).
+- **Defect signal:** an action/field present for one role is wrongly absent for another equivalent role — e.g. an admin can't take actions on their own created users, "Create Claim" missing on the manager dashboard, admin-created users lack the buttons super_admin sees, the assigned adjuster isn't visible to the manager.
+- **Applies to:** every role-gated action menu, dashboard, and record-detail — the whole RBAC surface (complements the charter's BOLA/BFLA server checks with the *client-visibility* half).
+- **First seen:** REZ-471 (admin can't act on own-created users), REZ-472 (Create-Claim missing on manager dashboard), REZ-474 (admin-created users lack super_admin's action buttons), REZ-475 (assigned adjuster not visible to the manager).
+
+### P27 · Open overlay must close / reposition on scroll + outside interaction
+- **Probe:** open a dropdown / select / menu / tooltip / date-picker, then **scroll the page** (and click outside, resize, open another). Watch the overlay.
+- **Expected:** the overlay closes (or stays anchored to its trigger) on scroll; clicking outside dismisses it; it never floats detached over unrelated content.
+- **Defect signal:** the dropdown stays open and stranded while the page scrolls, or detaches from its trigger.
+- **Applies to:** every popover-style control (custom dropdowns, menus, tooltips, pickers).
+- **First seen:** REZ-466 (dropdown remains open while scrolling the page).
+
+### P28 · Cross-step data must reach the Review/downstream view + survive reload
+- **Probe:** in a multi-step flow, enter (and later EDIT) values in an early step, then view the **Review / summary** screen and every **downstream** screen that should show them (approval, audit, detail); then **reload** the page and re-check. Use the persistence oracle (re-GET), not just the on-screen echo.
+- **Expected:** every entered/edited value appears on the Review and downstream screens, reflects edits, and survives a reload (persisted server-side).
+- **Defect signal:** data entered in one step is missing on Review/approval, an edit isn't reflected downstream, or values disappear after a page reload.
+- **Applies to:** every multi-step create/intake/payment flow with a Review or a separate approval/detail screen. Complements **P13** (mutation persistence) + **P18** (re-entry restore) — this is the *forward* flow to Review/downstream.
+- **First seen:** REZ-454 (Payee/Banking disappear from Review after reload), REZ-455 (updated SSN not reflected on Review), REZ-456 (Payee/Banking not shown during Payment Approval).
 
 ---
 
