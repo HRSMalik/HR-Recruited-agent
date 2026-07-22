@@ -48,12 +48,24 @@ A structured JSON every flow writes, plus an orchestrator roll-up. Audits emit f
   "flows": [ { "flow": "...", "mode": "...", "status": "...", "gate_passed": true } ],
   "decisions": [ /* the consolidated ADR index with driver_refs */ ],
   "findings_by_severity": { "critical": 0, "major": 2, "minor": 4, "cosmetic": 2 },
+  "findings_by_status": { "new": 1, "persisting": 2, "resolved": 1 },
   "risk_register": [ { "id": "ARCH-AVAIL-009", "risk": "single Redis node on session path", "likelihood": "M", "impact": "H", "disposition": "mitigate", "scenario": "QAS-AVAIL-02" } ],
   "hard_oracles": "all green | <which failed>",
+  "budget": {
+    "tier": "which-way",
+    "explorers": 3, "specialists": 3,
+    "evaluate_iterations": 2,
+    "wall_clock_min": 34,
+    "caps": { "per_agent_turns": 25, "verify_loop": 10, "wall_clock_target_min": 45 },
+    "cap_hit": false,
+    "coverage": "complete | partial (which dimensions/directions were cut and why)"
+  },
   "artifacts_dir": "architecture/<slug>/",
   "gate": { "passed": true, "reason": "all hard oracles green; every prioritized scenario met; mean rubric 0.85" }
 }
 ```
+- **`budget`** — required on every run (`shared/run-budget.md` §6). A run that hit a cap reports `coverage: partial` with what was cut, never silently presented as complete.
+- **`findings_by_status`** — required when prior-run artifacts exist (`shared/reliability.md` §4, run-over-run diffing); omit only on a genuine first pass ("no baseline").
 
 ## The human-facing deliverable — `architecture/<slug>/`
 
