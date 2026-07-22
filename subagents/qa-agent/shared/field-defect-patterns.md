@@ -29,7 +29,7 @@
 - **Expected:** text wraps or truncates (ellipsis/tooltip) inside its container; layout holds.
 - **Defect signal:** text overflows its container, pushes/breaks layout, misaligns columns, or clips.
 - **Applies to:** every text input + every screen that renders user text.
-- **First seen:** REZ-324 (form), REZ-328 (review page). *Regressions:* REZ-410, REZ-446 (word broken mid-word), REZ-417 / REZ-449 (a critical control — action buttons, search × — clipped/unreachable, not just cosmetic).
+- **First seen:** REZ-324 (form), REZ-328 (review page). *Regressions:* REZ-410, REZ-446 (word broken mid-word), REZ-417 / REZ-449 (a critical control — action buttons, search × — clipped/unreachable, not just cosmetic), REZ-477 (long characters wrap across multiple lines — re-filed QA FAILED, still not held).
 
 ### P2 · Numeric-field validation (negative / invalid)
 - **Probe:** in every numeric field enter a negative number, `0` where invalid, a non-numeric string, a decimal where an integer is expected, and an absurdly large value; submit.
@@ -71,7 +71,7 @@
 - **Expected:** the user sees the human-facing identifier (e.g. a formatted number like `CCA-2026-000123`), never the internal UUID/DB `_id`.
 - **Defect signal:** an internal ID leaks into user-facing text (wrong field mapping).
 - **Applies to:** every place a record is named to the user.
-- **First seen:** REZ-321 (Claim ID shown instead of Claim Number after delete). *Regressions:* REZ-399 (notification), REZ-408 (Settings), REZ-436, REZ-457 (payment-approve). *(sibling: wrong ACTOR recorded in an audit trail — REZ-468 Closure Audit — same "identity mapped wrong" family.)*
+- **First seen:** REZ-321 (Claim ID shown instead of Claim Number after delete). *Regressions:* REZ-399 (notification), REZ-408 (Settings), REZ-436, REZ-457 (payment-approve), REZ-484 (Claim ID shown on assign adjuster/manager), REZ-477 (Claim ID instead of Claim Number — re-filed QA FAILED). *(siblings — same "identity/attribution mapped wrong" family: wrong ACTOR in an audit trail — REZ-468 Closure Audit; **wrong PARENT/tenant attributed** — REZ-479, an Admin-created Manager/Adjuster shows org "CCA" instead of the carrier they were created under. When a record is created inside a context, verify it inherits the RIGHT parent/org, not the default.)*
 
 ### P8 · Error-message quality, format & placement
 - **Probe:** trigger validation and API errors (empty required field, bad format, server 4xx). Read the message.
@@ -133,6 +133,7 @@
 - **Applies to:** every wizard / multi-step form with save-and-resume, edit, or request-changes re-entry.
 - **First seen:** REZ-419 (redirected to Setup Password again), REZ-420 (no prefill on re-open), REZ-444 (opens on Intake, not the current stage).
 - **Complements P5:** P5 = cancel must CLEAR; P18 = re-entry must RESTORE. Test both directions.
+- **Cold-load complement:** re-entry via a *fresh* browser context — duplicate the tab, paste/re-open the same URL, hard-refresh — must hydrate the screen from the route alone, not rely on in-memory state carried over from the prior tab. *First seen:* REZ-486 (duplicating the URL: screen does not reload/render properly).
 
 ### P19 · Count / tab disagrees with its own contents
 - **Probe:** read every status count, badge, and filter tab, then compare against the actual rows shown under it — *before* any refresh (this is not the stale-refresh case).
@@ -184,14 +185,15 @@
 - **Expected:** controls align to a shared baseline / grid; a button is centered in its row, not offset high/low or crowding a neighbor.
 - **Defect signal:** a Clear/Copy/action button is misaligned with the filters or fields beside it (off-baseline, cramped, overflowing its row).
 - **Applies to:** filter bars, table toolbars, modal footers, any horizontal control cluster. (Sibling of **P4** — that's *duplicate/ambiguous* chrome icons; this is *misplaced* ones.)
-- **First seen:** REZ-461 (Clear button misaligned with the staff-page filters), REZ-465 (Copy button misaligned on the sent-invite modal).
+- **First seen:** REZ-461 (Clear button misaligned with the staff-page filters), REZ-465 (Copy button misaligned on the sent-invite modal). *Regressions:* REZ-480 (row of controls not aligned on one line), REZ-487 (timer dropdown / time field not aligned to its field — the overlay must anchor flush to its trigger, sibling of **P27**).
 
 ### P26 · Role-based action / visibility parity
 - **Probe:** for each user role (super_admin, admin, manager, adjuster), walk the same screens and compare which **actions** (buttons, menu items) and **data** (assigned adjuster, dashboards, queues) are available. Especially: an admin acting on **users/records they created**, a manager's dashboard vs an admin's, and any "Login As" / lower-tier view.
 - **Expected:** equivalent roles get the actions + visibility their permissions grant — no action is silently missing for a role that should have it, and no data a role should see is hidden (and vice-versa: nothing a role should NOT have leaks in).
 - **Defect signal:** an action/field present for one role is wrongly absent for another equivalent role — e.g. an admin can't take actions on their own created users, "Create Claim" missing on the manager dashboard, admin-created users lack the buttons super_admin sees, the assigned adjuster isn't visible to the manager.
 - **Applies to:** every role-gated action menu, dashboard, and record-detail — the whole RBAC surface (complements the charter's BOLA/BFLA server checks with the *client-visibility* half).
-- **First seen:** REZ-471 (admin can't act on own-created users), REZ-472 (Create-Claim missing on manager dashboard), REZ-474 (admin-created users lack super_admin's action buttons), REZ-475 (assigned adjuster not visible to the manager).
+- **First seen:** REZ-471 (admin can't act on own-created users), REZ-472 (Create-Claim missing on manager dashboard), REZ-474 (admin-created users lack super_admin's action buttons), REZ-475 (assigned adjuster not visible to the manager). *Regressions / new hits:* REZ-458 (Approve/Reject missing on Closure Review for Admin — re-filed QA FAILED), REZ-485 (assigned Adjuster not visible to the Carrier Admin — the *hide-too-much* direction), REZ-482 (Managers/Adjusters can see the Admin's claims they were **never assigned** — the *leak-too-much* direction; the BL-BUG-33 client-scoping surface `scopeClaims.ts`/`canViewClaim`).
+- **Test BOTH directions, every equivalent role:** (a) a role that SHOULD see/act is missing the action or the data (REZ-458/475/485), AND (b) a role that should NOT see records leaks the full set (REZ-482). Drive each role through the same screen and diff the visible actions + rows against the record's true assignment — the client-visibility half of BOLA/BFLA. This is the single highest-frequency class in the corpus.
 
 ### P27 · Open overlay must close / reposition on scroll + outside interaction
 - **Probe:** open a dropdown / select / menu / tooltip / date-picker, then **scroll the page** (and click outside, resize, open another). Watch the overlay.
@@ -206,6 +208,38 @@
 - **Defect signal:** data entered in one step is missing on Review/approval, an edit isn't reflected downstream, or values disappear after a page reload.
 - **Applies to:** every multi-step create/intake/payment flow with a Review or a separate approval/detail screen. Complements **P13** (mutation persistence) + **P18** (re-entry restore) — this is the *forward* flow to Review/downstream.
 - **First seen:** REZ-454 (Payee/Banking disappear from Review after reload), REZ-455 (updated SSN not reflected on Review), REZ-456 (Payee/Banking not shown during Payment Approval).
+- **Reverse-direction sibling:** a value entered/visible on one screen must render on the OTHER — REZ-439 (SSN not displayed during data entry but appears on the Review page). Check entry↔review parity **both ways**, and for masked/sensitive fields (SSN, banking) confirm the masking rule is consistent across entry, review, and approval — not blank on one and revealed on another.
+
+> **Batch 4 (appended 2026-07-23).** P29–P32 distilled from the real QA tester's REZ-476→REZ-487 filings plus the QA FAILED re-test column (REZ-477/481/458/445/439 reopened). This batch's dominant signal is **role/tenant visibility (P26)** — reinforced above with the leak *and* hide directions — and a cluster of assignment-lifecycle defects. New classes below.
+
+### P29 · Incomplete cascade on a state transition
+- **Probe:** for any transition documented to have side-effects on *related* entities (move-to-Pending clears the assigned team; close cascades to child records; deactivate revokes sessions), perform it and then verify **every** documented side-effect landed — not just the first one you notice. Re-fetch and check each related entity individually.
+- **Expected:** a transition applies its FULL set of side-effects atomically; if it clears "the assignment," it clears *all* of them (manager AND adjuster), not a subset.
+- **Defect signal:** the transition partially applies — one related entity is updated/cleared and a sibling that should get the same treatment is left stale (adjuster unassigned on move-to-Pending but the manager stays assigned).
+- **Applies to:** every status/stage transition with cascading side-effects on assignees, child records, permissions, or derived flags.
+- **First seen:** REZ-481 (Manager remains assigned after moving a claim to Pending while the Adjuster is correctly unassigned — re-filed QA FAILED).
+- **Distinct from P13:** P13 = the mutation *didn't happen at all* (success toast lies); P29 = the mutation happened but only *partially* — some of its required cascade is missing.
+
+### P30 · Selection list offers already-consumed / invalid options
+- **Probe:** open every picker that assigns or consumes a resource (assignment dropdown, "add member", tag/owner selectors). After selecting/assigning a value, **reopen the same picker** and check whether the already-assigned/consumed/ineligible option is still offered.
+- **Expected:** the list excludes options that are already assigned, already used, or invalid for the current state — you cannot re-pick something that would create a duplicate or an illegal combination.
+- **Defect signal:** an already-assigned user (or otherwise-invalid choice) still appears in the picker, allowing a duplicate/redundant assignment.
+- **Applies to:** every assignment/selection dropdown, multiselect, or transfer list backed by a set of consumable candidates.
+- **First seen:** REZ-483 (an assigned Manager/Adjuster still appears in the assignment dropdown → re-assignable). *(Input-picker sibling of **P15** — P15 = a stale ACTION offered on a row menu; P30 = a stale OPTION offered inside an input list.)*
+
+### P31 · Exported / generated file integrity
+- **Probe:** trigger every export/report/download (Excel, CSV, PDF, printable view) and **open the actual downloaded file** — never trust the success toast. Inspect for garbage/control characters, mojibake/encoding artifacts, a missing/extra BOM, unescaped separators, wrong column order, or empty-because-unmapped cells.
+- **Expected:** the file opens cleanly in its target app, is correctly encoded (UTF-8, quoted/escaped), and every column maps to the right human-readable value.
+- **Defect signal:** "vague"/garbage symbols in the cells, broken encoding, a CSV that splits on an unescaped comma, or unmapped/blank columns.
+- **Applies to:** every export/report/print surface (the file-output analog of **P17**'s on-screen raw-data leak).
+- **First seen:** REZ-478 (unexpected vague symbols in the Excel export from the Pipelines module).
+
+### P32 · Localization / translation actually applies
+- **Probe:** in a multilingual app, switch the language (or trigger a translated flow) and walk **every module** — especially newer ones — confirming each visible string, label, toast, and validation message actually switches. Don't stop at the first screen that translates.
+- **Expected:** the language toggle applies app-wide; no module is left rendering the source language (or raw i18n keys) after the switch.
+- **Defect signal:** a module ignores the language selection (Spanish-to-English not working in the Release module), shows mixed languages, or leaks raw translation keys.
+- **Applies to:** every screen/module in a localized app; highest-risk on modules added after the i18n wiring.
+- **First seen:** REZ-445 (Spanish-to-English translation not working in the Release module — re-filed QA FAILED).
 
 ---
 
