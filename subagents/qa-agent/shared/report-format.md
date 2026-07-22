@@ -27,9 +27,20 @@ Two layers: a **structured JSON** every flow writes (source of truth), and a **J
   "sut": "...", "build": "...",
   "flows": [ { "flow": "...", "status": "...", "gate_passed": true } ],
   "findings_by_severity": { "blocker":0,"critical":1,"major":2,"minor":3,"trivial":0 },
+  "findings_by_status": { "new":1,"persisting":2,"fixed":1 },
+  "budget": {
+    "tier": "pr-gate",
+    "flows_dispatched": 4,
+    "wall_clock_min": 11,
+    "caps": { "per_flow_turns": 25, "wall_clock_target_min": 15 },
+    "cap_hit": false,
+    "coverage": "complete | partial (which flows were cut and why)"
+  },
   "gate": { "passed": false, "reason": "1 critical finding (QA-SEC-001)" }
 }
 ```
+- **`budget`** — required on every run (`shared/run-budget.md` §6). Records the tier's ceilings and what was actually spent, so a truncated run is reported as `coverage: partial` with what was cut, never silently presented as complete.
+- **`findings_by_status`** — required when a prior run's artifacts exist (`shared/reliability.md` §3, run-over-run diffing); omit only on a genuine first run ("no baseline").
 
 ## Human-readable test cases — `test-cases.md` (BAKED-IN, required)
 Every run also emits a Markdown test-case document for human review/UAT — JSON/JUnit stay the machine source of truth; keep TC IDs consistent across all three. `test-case-design` writes its own; the orchestrator merges all flows into the run-level `test-cases.md`.
