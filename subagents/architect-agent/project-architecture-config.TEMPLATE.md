@@ -50,6 +50,10 @@ The explore→evaluate→verify *run reports* go to `artifacts/<flow>/` (machine
 ## Decision-record conventions
 - ADRs in `architecture/<slug>/adr/` (MADR 4.x, `shared/adr-template.md`), zero-padded sequential, immutable once accepted (supersede, never edit). Trace every ADR's `Driver refs` to a `QAS-*`. Flag one-way-door decisions.
 
+## Run budget & reliability
+- **Run budget (`shared/run-budget.md`).** Per-tier ceilings for this project: fan-out cap (explorers + specialists), per-agent turn cap, verify-loop bound, wall-clock target for single-decision / which-way / whole-system tiers. Confirm one-heavy-run-at-a-time.
+- **Reliability (`shared/reliability.md`).** Where prior-run artifacts live for **run-over-run diffing** (evaluation NEW/PERSISTING/RESOLVED). Keep the evaluator's twice-and-swap pass. (No live app → no auth/browser retry.)
+
 ## Scope (in / out)
 - **In**: the systems/subsystems this project actually needs designed. **Out / deferred**: what's explicitly not in scope (and keep a seam for it). Building the system is the controller's job; running infra/migrations is the operator's; UI/UX craft is `design-agent`'s; test execution is `qa-agent`'s.
 

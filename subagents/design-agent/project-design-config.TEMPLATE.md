@@ -21,6 +21,8 @@
 
 ## Standards & budgets
 - Accessibility target (WCAG level). Performance budget (Core Web Vitals). Device/viewport matrix (desktop-only? responsive?).
+- **Run budget (`shared/run-budget.md`).** Per-tier ceilings for this project: fan-out cap, per-agent turn cap, verify-loop bound, wall-clock target for tweak / feels-off / whole-app tiers. Confirm one-heavy-run-at-a-time.
+- **Reliability (`shared/reliability.md`).** Where prior-run artifacts live for **run-over-run diffing**. Known-benign console messages to allowlist (so they don't false-FAIL). Screens known to flake (retry-before-fail). Screenshot login creds that can re-auth once on redirect-to-login.
 
 ## Internationalization
 - Default direction, locales, translation-readiness.

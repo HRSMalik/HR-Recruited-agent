@@ -29,6 +29,16 @@ Score each 0.0–1.0 with a single skeptical evaluator (one prompt → score + p
 - **Polished states & micro-interactions** — every interactive element has crisp hover/focus/active/disabled/loading/empty/error; ~120–300ms ease-out transitions; empty states get an icon + a next action, never a bare sentence.
 - **Refined details** — consistent icon sizing/stroke, aligned controls, balanced whitespace, no orphaned/stranded elements. If it reads "default/bootstrappy", it fails this bar.
 
+### Cheap tells — any ONE fails "Refined details" (auto soft-fail, loop back to the writer)
+The named amateur signals. If a screenshot shows any of these, the Refined-details oracle fails regardless of the rest:
+- **System emoji glyphs used as UI icons** (a mic, camera, home, or checkmark from the emoji font), or **mixed icon sets / inconsistent stroke or size**. Use one SVG set, uniform stroke.
+- **Decorative coloured top-border "accent bars"** on cards, or **rainbow** per-card accent colours.
+- **Gradient-blob avatars / hero fills**, glow/neon, or the **brand hue flooded** across the screen (accent above ~10%).
+- **Faux / scribble sparklines** or any low-fidelity "chart-looking" squiggle; baseline-less or misleading charts.
+- **A bordered box around every element** (heavy borders everywhere) instead of whitespace + restrained hairlines; **drop-shadows on everything**.
+- **Flat wall of same-size / same-weight text**; non-tabular numerals in data columns.
+- Reads like a **default Bootstrap / admin template** — generic, boxy, over-coloured.
+
 ## Finding severity (Nielsen 0–4, for audits)
 
 `0` not a problem · `1` cosmetic · `2` minor · `3` major · `4` catastrophe. Severity = f(frequency, impact, persistence). Map to the finding-schema `severity` (cosmetic/minor/major/critical). Accessibility failures that block a task default to **major+**.
