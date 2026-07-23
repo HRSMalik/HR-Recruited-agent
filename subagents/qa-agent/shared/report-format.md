@@ -45,6 +45,8 @@ Two layers: a **structured JSON** every flow writes (source of truth), and a **J
 ## Human-readable test cases — `test-cases.md` (BAKED-IN, required)
 Every run also emits a Markdown test-case document for human review/UAT — JSON/JUnit stay the machine source of truth; keep TC IDs consistent across all three. `test-case-design` writes its own; the orchestrator merges all flows into the run-level `test-cases.md`.
 
+**The final human summary must be RELAYABLE to the user, not a bare gate line.** It carries, every run: (a) the **budget** actual-vs-cap (tokens AND wall-clock, overruns flagged); (b) the **per-case matrix** — each TC id · what it checked · PASS/FAIL/BLOCKED · the actual result; (c) the **flows** run + per-flow verdicts. The controller relays this to the user proactively (batch-32/33 style) — "GATE PASS, N/M cases" alone is insufficient, so make the case + flow detail present in the summary.
+
 **Write it as a structured tracker document** (the shape this project already uses for its tracker docs — match whatever bug-sheet / backlog format the repo has). Its structure: a title + project + Last-Updated header → `---` → a `## Summary` count table → `---` → sections grouped by feature/area, each with a case table → `---` → a `## Conventions` block explaining the columns/status values. NOT a single bare table. Before writing, glance at an existing repo tracker doc and mirror its header/summary/section/conventions rhythm.
 
 ```markdown
