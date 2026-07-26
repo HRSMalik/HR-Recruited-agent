@@ -52,6 +52,26 @@ regardless of what ran before it.** Most flakes are a shared-state or ordering l
 - Above budget: the suite is **gate-blocking** (see `ci-quality-gates`); newly flaky tests are
   quarantined per the flake doctrine, then root-caused back to a §1–§3 violation here.
 
+## 4b. Corpus shape — one file per layer, and the sweep must actually run 🔴
+Test **setup** debt, not test writing, is what makes a small fix expensive. Hard rule for every
+script this fleet writes or runs:
+- **One hermetic unit corpus per layer; APPEND a labelled section to it.** Never spawn a
+  `test_<ticket>` / `qa_rezNNN` / `be_<bug>` file per ticket — that is what grows a 60-script sprawl
+  whose full run costs ~10min and which nobody trusts enough to run. Cases are added, never removed.
+- **A per-ticket file needs a process-isolation justification** — seeds a real DB, drives HTTP against
+  a live server/shim, or mutates process-global state (frozen settings/singletons). Pure logic
+  (predicates, validators, schemas, mappers, tier math) never qualifies; it goes in the corpus.
+- **Find the project's runner before writing any loop.** It already handles per-test timeouts,
+  subprocess isolation, dependency-down SKIPs, side-effect safety, `--only <subset>`, and parseable
+  totals. Never hand-roll `for f in tests/*`, and never call an env wrapper (`conda run`, `npx`,
+  `poetry run`) **per file** — resolve the interpreter path once, or startup cost dominates and the
+  sweep times out with **no result at all**.
+- **A suite result is a gate only if it RAN.** Always report `pass / fail / skip`; a large skip count
+  is **NOT GREEN**. Exit 0 achieved by skipping most of the corpus is a P13 false-success — start the
+  missing dependency, or state plainly what fraction executed.
+- **Never let a test encode the bug.** When a fix reverses behaviour, find the case that asserted the
+  OLD behaviour and fix it in the same pass. A comment contradicting its own assertion is corpus rot.
+
 ## 5. Enforcement
 - Sizing is machine-enforced: small tests run in a sandbox that **denies I/O/network**, medium
   denies **off-localhost**, mirroring the §1 ban on external deps.
