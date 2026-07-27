@@ -45,6 +45,13 @@ Two layers: a **structured JSON** every flow writes (source of truth), and a **J
 ## Human-readable test cases — `test-cases.md` (BAKED-IN, required)
 Every run also emits a Markdown test-case document for human review/UAT — JSON/JUnit stay the machine source of truth; keep TC IDs consistent across all three. `test-case-design` writes its own; the orchestrator merges all flows into the run-level `test-cases.md`.
 
+**⛔ `test-cases.md` is authored BEFORE the run, not after it.** The enumerated case list is the thing the human approves at the pre-run gate (`run-budget.md` §1f), so the document is written twice-through:
+
+1. **Pre-run** — every case enumerated with `ID · Requirement/AC · Technique · Preconditions · Steps · Test data · Expected`, and **`Actual` = `—`, `Status` = `Not-run`**. This version goes to the human WITH the budget, for approval and tuning.
+2. **Post-run** — the SAME ids get `Actual` + `Status` filled in. Nothing is renumbered, nothing silently disappears: a case that was approved but not executed stays in the table as `Not-run`/`Blocked` with the reason, and a case invalidated by later evidence stays as `Overturned` pointing at the id that superseded it.
+
+**Never emit only `summary.json`.** A run that produces a machine report but no `test-cases.md` is incomplete — the human cannot review a JSON blob at case level, and approved-vs-executed becomes unverifiable. Write `test-cases.md` for **every** batch/run, and if the project has prior runs, mirror the column set and section rhythm of the most recent one rather than inventing a new shape.
+
 **The final human summary must be RELAYABLE to the user, not a bare gate line.** It carries, every run: (a) the **budget** actual-vs-cap (tokens AND wall-clock, overruns flagged); (b) the **per-case matrix** — each TC id · what it checked · PASS/FAIL/BLOCKED · the actual result; (c) the **flows** run + per-flow verdicts. The controller MUST relay all three to the user proactively and unprompted on every run — a gate verdict alone ("GATE PASS, N/M cases") is non-compliant. Make the case-level + flow-level detail present in the summary so it is directly relayable.
 
 **Write it as a structured tracker document** (the shape this project already uses for its tracker docs — match whatever bug-sheet / backlog format the repo has). Its structure: a title + project + Last-Updated header → `---` → a `## Summary` count table → `---` → sections grouped by feature/area, each with a case table → `---` → a `## Conventions` block explaining the columns/status values. NOT a single bare table. Before writing, glance at an existing repo tracker doc and mirror its header/summary/section/conventions rhythm.

@@ -39,6 +39,25 @@ visible and adjustable *up front*, not discovered after the spend. (Standing use
 gate must always show the flows-to-test + actions + budget so the human can tune; failing to surface it is a
 process failure, even when the run stays under cap.)
 
+## 1f. The plan gate presents the ENUMERATED TEST CASES, not flow themes
+
+A gate that lists *flows* ("F1 covers the filter dropdown, F2 covers the new endpoint") plus a budget
+is **not** a plan gate. The human cannot add, drop, re-scope, or re-prioritise a case they were never
+shown, so the tuning the gate exists for is impossible — they approve a shape, not a plan. What gets
+approved is the **numbered case list**.
+
+- **Author the cases BEFORE dispatch** and hand them over with the budget: `TC-nnn · requirement/AC ·
+  technique · preconditions · expected`, grouped per item under test, with `Actual` blank. Format and
+  the pre/post two-pass rule live in `report-format.md`.
+- **Report the same ids back** with `Actual` + `Status` filled in, so approved-vs-executed is
+  one-to-one. Any case that vanished between gate and report is a coverage regression the human must
+  be able to see at a glance.
+- **This also makes the dispatch sharper, not just the gate.** Handing each flow an explicit case list
+  is the enforceable form of a budget (§1c: size the work, not the warning) — "cover these 12 cases"
+  is countable by the flow, "≤48k tokens" is not.
+- A run that reports only a verdict, a count, or a summary table without per-case actuals is
+  non-compliant regardless of how well it went.
+
 ## 1a. The token ceiling MUST be DECOMPOSED at dispatch (or it is unenforceable)
 
 A run-level token ceiling alone does not bind anything. It is a number in a plan, not a control. Once
