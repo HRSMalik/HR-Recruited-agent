@@ -11,6 +11,23 @@ Binding on **every** flow. A flow that cannot honor these must downgrade scope a
 - Mutating flows seed an **isolated DB** (e.g. `<db>-qa` on a local/staging instance), run, then **drop/restore** it. Confirm teardown in the report.
 - Use **golden datasets** with known expected outputs for evaluation; never copy real PII into test data — mask/synthesize.
 - Record the fixture/seed id in every finding so repros are deterministic.
+- **Never drive a fixture into a state that makes it UNDELETABLE.** A product that archives records —
+  claim `Closed`, invoice `Paid`, case `Locked` — is *correct* to refuse deletion afterwards, so a flow
+  that reaches that state has created **permanent residue** in a shared environment. It cannot be torn
+  down without a direct DB write, which QA is forbidden from doing, and the next run then reads the
+  extra row as unexplained drift.
+  - The rule is about the **transition**, not the assertion: a flow may freely *submit* for closure,
+    *request* a lock, or *attempt* a terminal action and assert the response. What it must not do is
+    **complete** the transition on a fixture it intends to delete.
+  - If a terminal state genuinely must be exercised, do it deliberately: **accept the permanent +1**,
+    say so in the report, and name the record so the next run's baseline is explained rather than
+    surprising.
+  - ⚠️ **Never "fix" the archive guard to make teardown easier.** Read-only-after-terminal is a real
+    product requirement; loosening it to serve test convenience trades a correctness guarantee for a
+    cleanup shortcut. Work around it in the fixture, never in the product.
+  - Corollary for teardown order: deletion often requires a record to be *inactive* first. Sequence
+    teardown (deactivate → delete) and **assert each step's status code** — a teardown that reports
+    success because nobody checked the response is how residue accumulates unnoticed.
 
 ## 3. External side-effects
 - Do NOT trigger real-world side effects in tests: outbound calls/emails/SMS, third-party charges, calendar/event creation, social posts. Mock them or target sandbox credentials.
