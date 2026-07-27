@@ -123,6 +123,53 @@ So stop buying enforcement with instructions and buy it with **scope**:
 - **Expect the overrun and leave room**: budget flows to ~70% of the ceiling so a 1.3–1.8× flow
   overrun still lands inside the run's total.
 
+## 1g. PRICE the cap from a measured per-item rate — a round number is a guess that overruns
+
+§1c says to buy enforcement with scope rather than instructions. That is necessary and still not
+sufficient: you can size the scope correctly and **still** overrun, because the cap you attach to that
+scope was invented. Three consecutive read-only code-audit flows overran (**1.41× · 1.34× · 1.56×**) —
+and the overrun ratio was not noise, it was **exactly the ratio between the assumed and the actual cost
+per item**:
+
+| Flow | Items | Cap ÷ items | Actual ÷ items | Overrun |
+| --- | --- | --- | --- | --- |
+| payment cluster | 10 | 6.0k | 8.5k | 1.41× |
+| closure cluster | 5 | 9.0k | 12.0k | 1.34× |
+| mixed bucket | 9 | 5.6k | 8.7k | 1.56× |
+
+Nothing was undisciplined. The unit price was wrong three times, so the run was over three times.
+
+- **Derive the number, don't choose it.** For a read-only code-audit item (one ticket/requirement verified
+  against a codebase, with `file:line` evidence), the observed cost is **8.5k–12k per item**. Budget
+  **~20k fixed + ~10k per item** — fixed covers orienting in the repo and writing the report, which is why
+  small flows cost *more* per item, not less (the 5-item flow was the most expensive per item of the three).
+  Checked against all three runs, that model never under-forecasts.
+- **Re-derive per work type.** The rate above is for static code audit. A live browser flow, a load test,
+  and a static grep sweep have different rates. Keep a rate for each, and update it from the last run's
+  harness numbers — a budget line with no measurement behind it is decoration.
+- **If the derived cap is unaffordable, cut items — never shave the rate.** Halving the cap while keeping
+  the scope produces the same spend plus a false report of an overrun. The item count is the only honest dial.
+- **Read-discipline instructions do not substitute for pricing.** The 1.56× flow was dispatched *with* an
+  explicit per-file read limit ("never read more than ~120 lines of any file, grep then window"). It was
+  followed and it still overran, for the same reason §1c gives about token caps: the agent cannot measure
+  its own consumption, so a read rule shapes *technique*, never *total*. Do not count it as a control.
+- **Cap items per agent, and split on subsystem boundaries.** The worst overrun spanned 9 tickets across 6+
+  subsystems in one flow. Prefer **≤5 items per agent** and one subsystem per agent: it lowers the fixed
+  cost being re-paid, and a blown flow then wastes one subsystem's budget, not the whole run's.
+
+### An agent's self-reported spend is FABRICATED — discard it, never relay it
+
+The 1.56× flow closed its own report with *"Budget: used roughly 45-50k tokens (near the cap, not over)."*
+The harness figure was **78.2k**. It was not merely imprecise, it was **confidently wrong in the reassuring
+direction**, and a controller who quoted it would have reported a compliant run to the human.
+
+- **Never ask an agent to report its own token spend.** Asking invites a fabricated number into the report,
+  where it will be read as measurement. §1c establishes agents cannot observe this; a prompt that requests it
+  anyway is the controller's error, not the agent's.
+- **The harness usage figure is the only budget evidence.** Read it from the task result; quote nothing else.
+- Agents *can* honestly self-count things they observe — **turns, tool calls, files read, cases executed**.
+  Ask for those if you want a self-reported quantity, and derive nothing about tokens from them.
+
 ## 1d. The orchestrator's own overhead is the #1 observed overrun
 
 Three consecutive runs blew their ceiling on **orchestrator overhead, not flow work**: batch-38 spent
