@@ -84,6 +84,60 @@ into named, enforced sub-budgets **at the moment of dispatch**:
   are the cheapest work in the fleet and must be capped accordingly — if a flow of trivial oracles is
   outspending a flow doing adversarial reasoning, the caps are wrong.
 
+## 1a-UNITS. Cap in the unit the HARNESS meters — "output tokens" is unverifiable and produced fake overruns
+
+Everything in §1a is right about *decomposing* the budget and wrong about nothing except the **unit**. This
+section fixes the unit, because using the wrong one made a real run look 2.5× over budget when its flows were
+each under their cap, and made wall-clock look 2.7× over when it was under. Both directions of error are bad:
+one hides real waste, the other burns trust and invites pointless tightening.
+
+**The rule: every cap is stated in METERED TOTAL tokens — the number the harness reports for a subagent
+(`subagent_tokens`), which counts input + output. Never cap "output tokens".** Input dominates: each turn
+re-sends the whole accumulated context, so metered total runs **~4×** an agent's output. A cap in output
+tokens cannot be checked against anything the harness reports, and agents self-report it unreliably.
+
+**Size caps from tool calls, because metered cost tracks them almost linearly.** Measured across seven
+browser-driving QA flows in one session: `123k/49`, `159k/82`, `140k/62`, `128k/51`, `126k/47`, `96k/52`,
+`125k/85` (metered tokens / tool calls) — i.e. **≈2k metered tokens per tool call**, stable across flows.
+So:
+
+| Flow shape | Tool calls | Metered budget |
+| --- | --- | --- |
+| API-only probe sweep (no browser) | ≤25 | ~50k |
+| Single-screen UI flow + oracles | ≤45 | ~90k |
+| Multi-role / multi-fixture UI flow | ≤70 | ~140k |
+| Orchestrator overhead (dispatch + merge only) | ≤35 | ~70k |
+
+**State BOTH in every flow prompt: `≤N tool calls` AND `≤N metered tokens`.** The tool-call number is the
+one the flow can actually feel itself approaching; the metered number is the one the controller can verify
+afterwards. A three-flow UI batch is therefore **~400k metered**, not 180k — budget for what the work costs
+or every run will "overrun" a number that was never achievable.
+
+**Report ONLY harness metrics, never an agent's self-report.** Observed self-reports in one session: a flow
+claiming "~55 min" that the harness measured at **16.0 min**, and another claiming "~24k tokens" against a
+metered **123k**. Take `subagent_tokens` and `duration_ms` from the task result and report those; if you
+quote an agent's own figure, label it as a self-report and put the harness number beside it.
+
+**Wall-clock across concurrent flows is MAX, not SUM.** Parallel flows overlap; adding their durations
+invents an overrun that did not happen (a 3-flow run summing to 52.5 min had an elapsed of 20.7). Report
+per-flow durations against per-flow caps, plus a single elapsed figure = the longest flow.
+
+**A flow that dies without artifacts still bills in full — that is the biggest single waste to prevent.**
+One stalled security flow burned **126,706 metered tokens and produced no report at all** (14% of a
+900k-token session). Consequences:
+- **Never re-dispatch a stalled flow blind.** Check its artifact directory first; if it wrote nothing, the
+  work did not happen and re-running the same shape will likely fail the same way.
+- **Prefer the cheapest oracle that settles the case over an agent.** In that same run the two
+  highest-value security assertions were single HTTP calls; the controller settled 11 cases with direct
+  API probes for a negligible fraction of what the failed flow had already spent.
+- **Cap the blast radius of orchestration itself.** An orchestrator that only dispatches and merges should
+  not cost as much as a flow that does the work; if it does, flatten to direct agents.
+
+**Budget compliance is judged per flow against its own cap, then summed for the run.** "The run exceeded
+its ceiling" is only meaningful if the per-flow caps summed to that ceiling in the same unit. Say which
+flows exceeded, by how much, in metered tokens — never a single undifferentiated total compared against a
+number in a different unit.
+
 ## 1b. Recon is a SPIKE, not a phase
 
 The single largest recoverable waste is a flow discovering the environment by failing at it — burning a full
@@ -93,6 +147,14 @@ drive, learning one live fact, and starting over. Bound it:
   establish the facts a driver dies on: does this route exist and what component is actually mounted there ·
   do the documented credentials authenticate · is the record in a state the action allows · is the target an
   editable form or read-only until an Edit click · are the controls native elements or custom widgets.
+- **When a case exercises tenancy/RBAC/ownership logic, the recon spike must read the actual guard, not
+  just probe around it.** A mandate's business-rule prose ("staff can only act on their own tenant's records")
+  describes the *effect*; it is frequently silent on the *mechanism* (e.g. which field a marker is stamped
+  on, and — critically — that the marker can depend on WHO performed the creating action, not just the
+  target role name). A fixture built from the prose alone can construct actors that are subtly the wrong
+  shape and pass or fail for the wrong reason. Grep the 3-4 lines of source that implement the check
+  (the guard function, the field it reads, what sets that field) before writing the fixture — this is
+  cheaper than a live drive→error→patch cycle and catches a class of mistake recon-by-poking cannot.
 - **Write those facts into the artifact directory immediately**, before the full drive. A later flow (or a
   re-run) must never rediscover them.
 - **Cap de-flaking explicitly: two invalidated attempts, then STOP** and report the flow BLOCKED with the
