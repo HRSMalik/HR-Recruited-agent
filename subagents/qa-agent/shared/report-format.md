@@ -31,8 +31,16 @@ Two layers: a **structured JSON** every flow writes (source of truth), and a **J
   "budget": {
     "tier": "pr-gate",
     "flows_dispatched": 4,
-    "wall_clock_min": 11,
-    "caps": { "per_flow_turns": 25, "wall_clock_target_min": 15 },
+    "unit": "metered_total_tokens (harness subagent_tokens: input + output)",
+    "per_flow": [
+      { "flow": "F1", "metered_tokens": 123172, "tool_calls": 49, "duration_min": 15.8,
+        "caps": { "metered_tokens": 140000, "tool_calls": 70, "wall_clock_min": 20 },
+        "cap_hit": false, "source": "harness" }
+    ],
+    "metered_tokens_total": 422673,
+    "elapsed_min": 20.7,
+    "elapsed_note": "MAX of concurrent flows, never the SUM (sum was 52.5)",
+    "self_reported_note": "any agent-stated figure is labelled self_reported and shown beside the harness number",
     "cap_hit": false,
     "coverage": "complete | partial (which flows were cut and why)"
   },
@@ -52,7 +60,7 @@ Every run also emits a Markdown test-case document for human review/UAT — JSON
 
 **Never emit only `summary.json`.** A run that produces a machine report but no `test-cases.md` is incomplete — the human cannot review a JSON blob at case level, and approved-vs-executed becomes unverifiable. Write `test-cases.md` for **every** batch/run, and if the project has prior runs, mirror the column set and section rhythm of the most recent one rather than inventing a new shape.
 
-**The final human summary must be RELAYABLE to the user, not a bare gate line.** It carries, every run: (a) the **budget** actual-vs-cap (tokens AND wall-clock, overruns flagged); (b) the **per-case matrix** — each TC id · what it checked · PASS/FAIL/BLOCKED · the actual result; (c) the **flows** run + per-flow verdicts. The controller MUST relay all three to the user proactively and unprompted on every run — a gate verdict alone ("GATE PASS, N/M cases") is non-compliant. Make the case-level + flow-level detail present in the summary so it is directly relayable.
+**The final human summary must be RELAYABLE to the user, not a bare gate line.** It carries, every run: (a) the **budget** actual-vs-cap **in metered total tokens, sourced from the harness (`subagent_tokens` / `duration_ms`), per flow against that flow's own cap — never an agent's self-report, never a single total compared against a number in a different unit, and elapsed = MAX of concurrent flows not SUM** (see `run-budget.md` §1a-UNITS; getting this wrong invented a 2.7× wall-clock overrun that never happened and a 2.5× token overrun measured in the wrong unit), overruns flagged; (b) the **per-case matrix** — each TC id · what it checked · PASS/FAIL/BLOCKED · the actual result; (c) the **flows** run + per-flow verdicts. The controller MUST relay all three to the user proactively and unprompted on every run — a gate verdict alone ("GATE PASS, N/M cases") is non-compliant. Make the case-level + flow-level detail present in the summary so it is directly relayable.
 
 **Write it as a structured tracker document** (the shape this project already uses for its tracker docs — match whatever bug-sheet / backlog format the repo has). Its structure: a title + project + Last-Updated header → `---` → a `## Summary` count table → `---` → sections grouped by feature/area, each with a case table → `---` → a `## Conventions` block explaining the columns/status values. NOT a single bare table. Before writing, glance at an existing repo tracker doc and mirror its header/summary/section/conventions rhythm.
 

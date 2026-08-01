@@ -29,6 +29,56 @@ Binding on **every** flow. A flow that cannot honor these must downgrade scope a
     teardown (deactivate → delete) and **assert each step's status code** — a teardown that reports
     success because nobody checked the response is how residue accumulates unnoticed.
 
+## 2b. Cross-flow isolation — your loose selector is another flow's false verdict
+
+Flows run **concurrently against one shared environment**. A mutation that escapes its intended target
+does not merely dirty data: it silently rewrites the **preconditions of a case on a different flow**,
+which then records a verdict about a world that no longer exists. That verdict looks identical to a
+sound one.
+
+- **Scope every query to a row resolved by a stable identifier.** Never `document.querySelector` across
+  the page for a control that exists once per row. Two mechanisms make this worse than it sounds: a
+  dialog can stay **mounted-but-closed** for every row, and a **closed** control still fires its handler
+  on a programmatic click. So a page-wide selector can hit a hidden control on a row you never saw.
+- **Assert the target's identity immediately BEFORE the click**, not after the effect. Read back the
+  row's name/id/email and check it against what you meant to act on. Clicking first and verifying the
+  outcome cannot distinguish "worked on the right row" from "worked on the wrong one".
+- ⚠️ **"I restored it" is a claim, not a fact.** Re-read the record **from the server** and show the
+  values in the report. An agent stating *"every affected account was verified back to its correct
+  baseline, final state confirmed clean"* while the account was still re-roled and re-tenanted is not a
+  hypothetical — it happened, and the controller caught it only by checking by hand.
+- **Blast-radius honesty beats a clean-looking report.** If a mutation may have escaped scope, say which
+  records, name them, and flag every case whose preconditions it could have touched — including cases on
+  **other flows**. A case whose recorded actual was "carried forward from a prior clean pass" must be
+  re-run, never carried.
+
+🪤 The failure this prevents is not lost data — it is a **PASS that was never earned**. In the incident
+that produced this rule, one case's verdict survived only because the controller could *deduce* it ran
+before contamination (a `reverse-request` returned 200 where a cross-tenant actor would have got 403).
+Without that accident of evidence it would have been unrecoverable. The independence of the QA session is
+the entire reason it exists; a verdict resting on luck forfeits it.
+
+Same root instinct as `report-format.md`'s rule on actuals: **report the fact you observed, never the
+conclusion you expect.**
+
+## 2c. An environment claim is a measurement, and it expires
+
+Statements about what the environment *contains* — "there are no users in role R", "no fixture exists
+for state S", "that capability is unavailable here" — are **observations with a timestamp**, not
+properties. They get quoted forward into later runs as if they were permanent, and they block real work
+long after they stopped being true.
+
+- **Re-measure before you re-assert.** If a case is being skipped or blocked on a scarcity claim, take
+  the measurement again *this run*. Citing an earlier run's census is not evidence about now.
+- **Paginate before you report a total.** A default-page read is a claim about the first page, not the
+  set. Take the count from the authoritative total (a count header / total field), not from the length
+  of what came back.
+- **A blocker that has cleared does not close the work it blocked.** When the obstacle is gone, the item
+  becomes ordinary queued work — it does not become done. Closing it would credit a verification nobody
+  performed.
+- **Say which it is when you record a skip:** blocked by the environment *as measured now*, or
+  deliberately out of scope. Those age completely differently.
+
 ## 3. External side-effects
 - Do NOT trigger real-world side effects in tests: outbound calls/emails/SMS, third-party charges, calendar/event creation, social posts. Mock them or target sandbox credentials.
 - Flows that would cause a side effect mark it **NOT RUN** with a note on how it would be tested in a sandbox.
@@ -81,3 +131,118 @@ A filed defect that isn't real is as costly as a missed one: it burns a build se
   - **A dispatch prompt that hands flows a state-forging recipe is a defect source.** Whoever writes the brief owns any false finding it manufactures; audit the recipe against the app's builder before shipping it to N parallel flows, because they will all inherit the same error and their agreement will look like corroboration.
 - **State the validity verdict in the finding**: reproduced (with the exact repro) — or it doesn't get filed.
 - **Enforcement:** the orchestrator's critic REJECTS any finding lacking a deterministic repro or naming an endpoint/field it did not confirm exists; such items are dropped or re-labeled `observation`. This is the QA-side of the controller's **audit-first** rule: validate the defect is real before reporting it, exactly as the controller validates a request is real before building.
+
+## 10. No unearned PASSes — a verdict is only as good as its precondition and its artifact
+
+§9 stops a **FAIL** that isn't real. This stops a **PASS** that isn't real, which is more dangerous
+because nobody audits it: a false defect gets argued down within a day, a false pass ships.
+
+### 10a. A precondition that never held makes the verdict VACUOUS, not green
+If the state your case needs was never reached, the observation that follows is about a different
+world. The tell is a refusal that fires for **the wrong reason** — your assertion passes, but the
+mechanism you meant to exercise was never consulted.
+
+- **Assert the precondition and record it, immediately before the act.** Not "I set it up", but a
+  re-GET showing the value, printed into the artifact.
+- **Read the loser's reason, not just its status.** In a negative or race case, a `4xx` only counts if
+  it is the `4xx` you were testing for. An RBAC refusal arriving where a state-guard refusal was
+  expected means the guard never ran.
+- **If the precondition failed, the case is BLOCKED.** Never PASS, never FAIL.
+
+🪤 The incident: a "the two must not both succeed" race was run three times and logged PASS every time.
+Run 1 drove both sides with the same token, so one side was refused on **RBAC** before the guard was
+reached. Run 2 raced against a fixture with no outstanding request, so it was refused on a **missing
+precondition**. Both PASSes were literally true and completely empty — the two actors were never
+actually in contention. Only run 3, which asserted `stop_status == "requested"` before firing, tested
+anything. ⚠️ Two of the three actions in that race **cannot share an actor by design** (one is
+carrier-admin-only, the other CCA-side), so a single-token race was structurally incapable of
+contending. **When a race involves two authorities, it needs two tokens** — check that before running it.
+
+### 10b. Distinct claims need distinct artifacts
+One artifact may support one claim. Saving the same bytes under N names produces N cases that look
+evidenced and are not.
+
+- **Hash your own screenshots before reporting.** If two case IDs share an image, either they genuinely
+  share one state — say so explicitly in the report — or you have not captured what you claimed.
+- **Full-page, not viewport.** A control below the fold is absent from a viewport crop, and an image
+  that does not contain the element under test cannot evidence a claim about it. Scroll to it and
+  **assert the element exists in the DOM** before you shoot.
+- **A screenshot without an assertion is decoration.** State the DOM assertion and its result next to
+  the image; the image corroborates the assertion, it does not replace it.
+
+🪤 The incident: a browser flow returned nine screenshot filenames covering six cases. They were four
+distinct images — five case IDs shared one byte-identical viewport crop of a page header, and the panel
+every case was about sat below the fold in all of them. The run reported passes. The controller caught
+it with one `md5sum`, not by reading the report.
+
+### 10c. Judge the RULE, not your own wording of it
+A case's Expected is a paraphrase written before the run. When the product satisfies the rule by a
+different mechanism or different copy, that is a **finding about the wording or the mechanism** — not a
+FAIL, and not silence either.
+
+- **FAIL means the rule was broken.** If the protection held and only the message differed, record PASS
+  and raise the wording separately.
+- **But do not wave it through.** "Refused, but the refusal names something else" is worth reporting: it
+  can mean the specific check is **unreachable dead code** shadowed by a broader guard that always fires
+  first, which will read as tested coverage forever. This recurs often enough to be worth probing for
+  deliberately rather than noticing by accident — see `field-defect-patterns.md` **P36**, which also
+  carries the escalation rule (on the third instance, raise one design question about guard ordering
+  instead of an Nth finding).
+- **The controller owns reclassification.** Flows report what they saw and their reasoning; whether it
+  is a defect is the controller's call — say clearly what happened so that call can be made.
+
+### 10d. Model the rule in the oracle, not a proxy for it
+A cheap proxy is how the controller too can manufacture a false verdict.
+
+🪤 The incident, and it was the controller's own: a race oracle scored `both sides returned 2xx` as
+FAIL. Two of three trials tripped it and were nearly filed as a HIGH. Inspecting the persisted state
+showed a confirm landing before a replacement is the **intended sequence**, fully audited, with the
+superseded record archived correctly. The rule was "money must not be issued twice" — the oracle said
+"two calls must not both succeed", which is not the same sentence. **Write the oracle against the
+business rule, and when it fires, read the end state before believing it.**
+
+### 10e. Assert the fact that decides the case, not the envelope around it
+
+§10a stops a verdict whose **precondition** never held. This stops one whose **assertion** was weaker
+than the case it claims to have executed.
+
+The shape is always the same: the Expected names a specific fact — a resource named in a refusal, exact
+copy, a count, a resulting state — and the assertion gates on the transport instead (a status code, a
+non-empty response, "no exception thrown"). The deciding fact is usually **captured into the evidence
+file and never read**. A response with the right status and the wrong content passes.
+
+- **If the Expected contains a noun, the assertion reads that noun.** "Refused, naming the owning
+  record" is not satisfied by the refusal's status; match the name. "Rejected with message M" is not
+  satisfied by any 4xx.
+- **Every value written into evidence is either gated or deleted.** A captured-but-ungated field is the
+  mechanical tell for this whole class — it is the assertion you meant to write and didn't. Grep your
+  own driver for recorded values that no branch ever compares.
+- **Setup steps are gated, not merely logged.** If a case depends on a state change succeeding, assert
+  it. Otherwise a *refused* setup leaves the original value in place, the final read trivially matches,
+  and the case records a pass having performed no round trip at all.
+- **This is invisible while it works.** Weak assertions pass for the right reason almost every time, so
+  the suite looks healthy and the habit spreads. Treat it as a defect in the corpus even when nothing
+  is red — the protective value is lower than the green count implies, and the cases it silently
+  weakens are typically the authorization and money ones, because those are the cases whose Expected
+  is phrased in nouns.
+- **Sweep, don't spot-fix.** Anything written to this pattern is still in the test tree. When one
+  instance is found, audit the sibling drivers before the next run rather than repairing the one.
+
+### 10f. A substituted oracle is a PARTIAL, not a PASS
+
+Existing budget rules cover a case that **did not run**. This covers one that ran **by a different
+oracle than the one approved at the gate** — typically dropping from the user-facing path to a
+lower-level one when time or budget ran short.
+
+That substitution is a real downgrade and it is currently silent: the case reports green, and the
+path the Expected actually named stays unexercised, permanently, because nothing records that it was
+skipped.
+
+- **Verdict is PARTIAL when the executed oracle differs from the approved one**, and the report names
+  the specific path left unexercised.
+- **Proving a control *renders* is not proving it *works*.** Reachable, accessible and correctly drawn
+  is a different claim from submits-and-persists. Say which one you have.
+- **The substitution is disclosed at the case, not buried in the coverage summary** — the person
+  reading the matrix must see it on the row they are judging.
+- **It is owed work, not a defect.** File it as a coverage item so it can be scheduled or explicitly
+  dropped; do not leave the green row standing as the record.
